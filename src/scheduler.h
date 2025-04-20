@@ -5,7 +5,6 @@
 #include "pcb.h"
 #include "queue.h"
 #include "process.h"
-#include "stats.h"
 
 // Function prototypes for scheduler operations
 void run_scheduler();

@@ -1,6 +1,4 @@
-#ifndef HEADERS_H
-#define HEADERS_H
-
+#pragma once
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -13,6 +11,9 @@
 #include <string.h>
 #include <math.h>
 #include "clk.h"
+#include "process.h"
+#include "pcb.h"
+#include "scheduler.h"
 
 // Constants
 #define READY 0
@@ -28,15 +29,3 @@
 #define PROCESS_ARRIVED 1
 #define PROCESS_FINISHED 2
 
-// Message structure for process communication
-typedef struct {
-    long mtype;         // Message type (PROCESS_ARRIVED or PROCESS_FINISHED)
-    int pid;            // Process ID (from fork)
-    int id;             // Process ID (assigned by generator)
-    int arrival_time;   // Time when process arrives
-    int running_time;   // Total execution time needed
-    int priority;       // Process priority
-    int remaining_time; // Remaining time of the process
-} ProcessMessage;
-
-#endif // HEADERS_H
