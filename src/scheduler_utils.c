@@ -1,5 +1,6 @@
 #include "headers.h"
 
+
 // compare function for periorty queue
 int compare_processes(const void* p1 , const void* p2) {
     PCB *process1 = (PCB *)p1;
@@ -45,7 +46,7 @@ void log_process_state(PCB* process, char* state, int time) {
 void generate_statistics() {
     if (process_count == 0) return;
     
-    // Calculate metrics
+
     float total_wait = 0;
     float total_wta = 0;
     float total_ta = 0;
