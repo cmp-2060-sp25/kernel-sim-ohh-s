@@ -1,8 +1,7 @@
 #include "scheduler.h"
-
 #include "clk.h"
+#include "headers.h"
 
-PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time , PCB** finished_processes , int completed_process_count);
 void run_scheduler()
 {
     sync_clk();
@@ -31,3 +30,4 @@ void run_scheduler()
     }
     destroy_clk(0);
 }
+
