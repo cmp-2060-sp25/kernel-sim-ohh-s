@@ -1,15 +1,19 @@
-#include "scheduler.h"
+#include "headers.h"
 
-PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time , PCB** finished_processes , int completed_process_count);
+
 void run_scheduler()
 {
     sync_clk();
-    // TODO function to init a scheduler
+    if(init_scheduler() == -1) {
+        fprintf(stderr, "Failed to initialize scheduler\n");
+        return;
+    }
+
     while(1) {
         current_time = get_clk();
         // TODO call function that recieves processes from process generator
         // receive_processes();
-        PCB * next_process = hpf(ready_queue , running_process , current_time , finished_processes , completed_process_count);
+        PCB * next_process = hpf(ready_queue , running_process , current_time  , completed_process_count);
         if(next_process != NULL) {
             // TODO function to run the process
             // run_process(next_process);
@@ -19,31 +23,9 @@ void run_scheduler()
             break;
         }
     }
-    
+    generate_statistics();
+    if(log_file) {
+        fclose(log_file);
+    }
     destroy_clk(0);
-}
-
-PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time , PCB** finished_processes , int completed_process_count) {
-    if(running_process && running_process->remaining_time <= 0) {
-        running_process->status = TERMINATED;
-        running_process->finish_time = current_time;
-        running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) - running_process->runtime;
-        finished_processes[completed_process_count++] = running_process;
-        log_process_state(running_process , "finished" , current_time);
-        running_process = NULL;
-
-    }
-    if(!running_process && !min_heap_is_empty(ready_queue)) {
-        PCB* next_process = min_heap_extract_min(ready_queue);
-        next_process->status = RUNNING;
-        next_process->waiting_time = current_time - next_process->arrival_time;
-        // assuming that any process is initially having start time -1
-        if (next_process->start_time == -1) {
-            next_process->start_time = current_time;
-        }
-        log_process_state(next_process , "started" , current_time);
-        // TODO call function to run the process in process.c
-        return next_process;
-    }
- return NULL;   
 }

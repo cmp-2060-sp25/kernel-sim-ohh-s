@@ -21,10 +21,6 @@ typedef struct {
     int pid;             
 } PCB;
 
-// Structure for ready queue node
-typedef struct Node {
-    PCB process;
-    struct Node *next;
-} Node;
+
 
 #endif // PCB_H

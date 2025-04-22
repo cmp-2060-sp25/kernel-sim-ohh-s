@@ -14,7 +14,8 @@
 #include "process.h"
 #include "pcb.h"
 #include "scheduler.h"
-
+#include "data_structures/min_heap.h"
+#include "scheduler_utils.h"
 // Constants
 #define READY 0
 #define RUNNING 1
