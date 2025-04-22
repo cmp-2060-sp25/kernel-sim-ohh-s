@@ -1,13 +1,19 @@
-#include "headers.h"
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+#include "pcb.h"
+#include "scheduler.h"
 
 
 // compare function for periorty queue
-int compare_processes(const void* p1 , const void* p2) {
-    PCB *process1 = (PCB *)p1;
-    PCB *process2 = (PCB *)p2;
+int compare_processes(const void* p1, const void* p2)
+{
+    PCB* process1 = (PCB*)p1;
+    PCB* process2 = (PCB*)p2;
 
 
-    if (process1->priority != process2->priority) {
+    if (process1->priority != process2->priority)
+    {
         return process1->priority - process2->priority;
     }
 
@@ -44,7 +50,7 @@ init_scheduler() {
     return 0;
 }
 
-// HPF algorithem 
+// HPF algorithem
 PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time ,int completed_process_count) {
     if(running_process && running_process->remaining_time <= 0) {
         running_process->status = TERMINATED;
@@ -65,34 +71,39 @@ PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time ,int co
         // TODO call function to run the process in process.c
         return next_process;
     }
- return NULL;   
+ return NULL;
 }
 
 // Log process state changes
 void log_process_state(PCB* process, char* state, int time) {
-    
+
     if (strcmp(state, "started") == 0) {
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
                 time, process->id, state, process->arrival_time, process->runtime,
                 process->remaining_time, process->waiting_time);
-    } else if (strcmp(state, "finished") == 0) {
+    }
+    else if (strcmp(state, "finished") == 0)
+    {
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d TA %d WTA %.2f\n",
                 time, process->id, state, process->arrival_time, process->runtime,
-                0, process->waiting_time, 
-                (time - process->arrival_time),  // Turnaround time
-                (float)(time - process->arrival_time) / process->runtime);  // Weighted turnaround time
-    } else {
+                0, process->waiting_time,
+                (time - process->arrival_time), // Turnaround time
+                (float)(time - process->arrival_time) / process->runtime); // Weighted turnaround time
+    }
+    else
+    {
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
                 time, process->id, state, process->arrival_time, process->runtime,
                 process->remaining_time, process->waiting_time);
     }
-    
+
     fflush(log_file);
 }
 
 
 // Generate performance statistics
-void generate_statistics() {
+void generate_statistics()
+{
     if (process_count == 0) return;
     
 

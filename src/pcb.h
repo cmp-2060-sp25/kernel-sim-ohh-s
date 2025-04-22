@@ -1,7 +1,4 @@
-#ifndef PCB_H
-#define PCB_H
-
-#include "headers.h"
+#pragma once
 
 // Process Control Block (PCB)
 typedef struct {
@@ -20,7 +17,3 @@ typedef struct {
     int status;             
     int pid;             
 } PCB;
-
-
-
-#endif // PCB_H
