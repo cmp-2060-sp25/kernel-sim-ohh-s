@@ -10,9 +10,6 @@ void generate_statistics();
 int compare_processes(const void* a, const void* b);
 void log_process_state(PCB* process, char* state, int time);
 
-PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time, PCB** finished_processes,
-         int completed_process_count);
-
 // Global variables declarations (extern)
 extern int current_time;
 extern int process_count;

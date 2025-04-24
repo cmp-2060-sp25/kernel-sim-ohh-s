@@ -3,7 +3,7 @@
 #include <string.h>
 #include "pcb.h"
 #include "scheduler.h"
-
+#include "headers.h"
 
 // compare function for periorty queue
 int compare_processes(const void* p1, const void* p2)

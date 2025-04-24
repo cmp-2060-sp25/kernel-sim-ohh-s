@@ -2,6 +2,8 @@
 #define SCHEDULER_UTILITIES_H
 
 #include "headers.h"
+#include "pcb.h"
+#include "min_heap.h"
 
 // Function prototypes
 int compare_processes(const void* p1, const void* p2);
