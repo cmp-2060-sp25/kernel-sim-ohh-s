@@ -1,23 +1,26 @@
-#ifndef HEADERS_H
-#define HEADERS_H
+#pragma once
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <sys/shm.h>
-#include <sys/sem.h>
-#include <string.h>
-#include <math.h>
-#include "clk.h"
+// Message structure for IPC
+typedef struct
+{
+    long mtype;
+    int process_id;
+    int arrival_time;
+    int runtime;
+    int priority;
+} ProcessMessage;
 
+#include "data_structures/min_heap.h"
+#include "scheduler_utils.h"
 // Constants
 #define READY 0
 #define RUNNING 1
-#define TERMINATED 2
+#define TERMINATED 2 // I Think using this is wrong
+
+// Extra States (IDK if we'll use them)
+#define BLOCKED 2
+#define PAUSED 3
+#define PAUSED 4
 
 // Scheduling algorithms
 #define HPF 1
@@ -28,15 +31,3 @@
 #define PROCESS_ARRIVED 1
 #define PROCESS_FINISHED 2
 
-// Message structure for process communication
-typedef struct {
-    long mtype;         // Message type (PROCESS_ARRIVED or PROCESS_FINISHED)
-    int pid;            // Process ID (from fork)
-    int id;             // Process ID (assigned by generator)
-    int arrival_time;   // Time when process arrives
-    int running_time;   // Total execution time needed
-    int priority;       // Process priority
-    int remaining_time; // Remaining time of the process
-} ProcessMessage;
-
-#endif // HEADERS_H

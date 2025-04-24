@@ -1,17 +1,21 @@
-#ifndef SCHEDULER_H
-#define SCHEDULER_H
+#pragma once
 
-#include "headers.h"
+#include <stdio.h>
 #include "pcb.h"
-#include "queue.h"
-#include "process.h"
-#include "stats.h"
+#include "min_heap.h"
 
-// Function prototypes for scheduler operations
+
 void run_scheduler();
-void initialize_scheduler(int alg, int quantum_val, FILE **log_file, int *msgq_id);
-void schedule(int algorithm, int quantum, Node **ready_queue, PCB **running_process, 
-             FILE *log_file, int current_time);
-void cleanup(FILE *log_file, int msgq_id, Node **ready_queue, PCB **running_process);
+void generate_statistics();
+int compare_processes(const void* a, const void* b);
+void log_process_state(PCB* process, char* state, int time);
 
-#endif // SCHEDULER_H
+// Global variables declarations (extern)
+extern int current_time;
+extern int process_count;
+extern int completed_process_count;
+extern PCB* running_process;
+extern min_heap_t* ready_queue;
+extern int msg_queue_id;
+extern FILE* log_file;
+extern PCB** finished_processes;
