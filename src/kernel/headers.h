@@ -12,8 +12,7 @@ typedef struct
 
 #define MAX_INPUT_PROCESSES 100
 
-#include "data_structures/min_heap.h"
-#include "scheduler_utils.h"
+
 // Constants
 #define READY 0
 #define RUNNING 1

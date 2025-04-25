@@ -1,7 +1,8 @@
 #include <stdio.h>
 
 #include "headers.h"
-#include "data_structures/min_heap.h"
+#include "min_heap.h"
+#include "pcb.h"
 
 // Global variables
 int process_count = 0;
