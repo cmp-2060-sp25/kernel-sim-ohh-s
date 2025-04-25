@@ -32,6 +32,8 @@ PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time)
 {
     if (running_process && running_process->remaining_time <= 0)
     {
+        // @TODO: FOR DEBUG ONLY
+        printf("[HPF] WARNING RECEIVED A PROCESS WITH REMAINING TIME = 0 AND RUNTIME = %d", running_process->runtime);
         running_process->status = TERMINATED;
         running_process->finish_time = current_time;
         running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) - running_process
@@ -56,30 +58,36 @@ PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time)
     return NULL;
 }
 
+
+// next_process->finish_time;
+// next_process->turnaround_time;
+// next_process->weighted_turnaround;
+//
 // SRTN algorithm
-PCB* srtn(min_heap_t* ready_queue, PCB* running_process, int current_time, int completed_process_count)
+PCB* srtn(min_heap_t* ready_queue, int current_time)
 {
-    if (running_process && running_process->remaining_time <= 0)
-    {
-        running_process->status = TERMINATED;
-        running_process->finish_time = current_time;
-        running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) - running_process
-            ->runtime;
-        log_process_state(running_process, "finished", current_time);
-        running_process = NULL;
-    }
-    if (!running_process && !min_heap_is_empty(ready_queue))
+    if (!min_heap_is_empty(ready_queue))
     {
         PCB* next_process = min_heap_extract_min(ready_queue);
         next_process->status = RUNNING;
-        next_process->waiting_time = current_time - next_process->arrival_time;
+        if (next_process->last_run_time == -1)
+        {
+            next_process->waiting_time = current_time - next_process->arrival_time;
+        }
+        else next_process->waiting_time += current_time - next_process->last_run_time;
+
         // assuming that any process is initially having start time -1
         if (next_process->start_time == -1)
         {
             next_process->start_time = current_time;
+            next_process->response_time = next_process->start_time - next_process->arrival_time;
         }
         log_process_state(next_process, "started", current_time);
         // TODO call function to run the process in process.c
+
+
+        next_process->remaining_time--;
+        next_process->last_run_time = get_clk();
         return next_process;
     }
     return NULL;
