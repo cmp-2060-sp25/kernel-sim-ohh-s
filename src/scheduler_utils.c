@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "pcb.h"
+#include "Queue.h"
 #include "scheduler.h"
 #include "headers.h"
 
@@ -21,7 +22,7 @@ int compare_processes(const void* p1, const void* p2)
     return process1->arrival_time - process2->arrival_time;
 }
 
-init_scheduler() {
+int init_scheduler() {
     current_time = 0;
     process_count = 0;
     completed_process_count = 0;
@@ -50,7 +51,7 @@ init_scheduler() {
     return 0;
 }
 
-// HPF algorithem
+// HPF algorithm
 PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time ,int completed_process_count) {
     if(running_process && running_process->remaining_time <= 0) {
         running_process->status = TERMINATED;
@@ -72,6 +73,50 @@ PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time ,int co
         return next_process;
     }
  return NULL;
+}
+
+// RR algorithm
+PCB* rr(Queue* ready_queue, PCB* running_process, int current_time, int quantum) {
+    static int time_slice = 0; // Tracks the time slice for the current process
+
+    if (running_process && running_process->remaining_time <= 0) {
+        running_process->status = TERMINATED;
+        running_process->finish_time = current_time;
+        running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) - running_process->runtime;
+        log_process_state(running_process, "finished", current_time);
+        running_process = NULL;
+        time_slice = 0; // Reset the time slice
+    }
+
+    // If the time slice for the running process has expired
+    if (running_process && time_slice >= quantum) {
+        running_process->status = READY;
+        enqueue(ready_queue, running_process); // Re-enqueue the process
+        log_process_state(running_process, "resumed", current_time);
+        running_process = NULL;
+        time_slice = 0; // Reset the time slice
+    }
+
+    // If no process is currently running and the ready queue is not empty
+    if (!running_process && !isQueueEmpty(ready_queue)) {
+        running_process = dequeue(ready_queue);
+        running_process->status = RUNNING;
+
+        // If the process is starting for the first time
+        if (running_process->start_time == -1) {
+            running_process->start_time = current_time;
+        }
+
+        log_process_state(running_process, "started", current_time);
+        time_slice = 0; // Reset the time slice for the new process
+    }
+
+    // Increment the time slice for the running process
+    if (running_process) {
+        time_slice++;
+    }
+
+    return running_process;
 }
 
 // Log process state changes
