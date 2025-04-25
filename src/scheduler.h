@@ -4,11 +4,13 @@
 #include "pcb.h"
 #include "min_heap.h"
 
-
+void scheduler_cleanup(int signum);
 void run_scheduler();
+int init_scheduler();
 void generate_statistics();
 int compare_processes(const void* a, const void* b);
 void log_process_state(PCB* process, char* state, int time);
+void receive_processes(int);
 
 // Global variables declarations (extern)
 extern int current_time;

@@ -1,7 +1,8 @@
 #include "clk.h"
 #include "headers.h"
-#include <signals.h>
+#include <signal.h>
 #include <stdlib.h>
+#include <unistd.h>
 /* Modify this file as needed*/
 
 int *RT; ///remaining process time

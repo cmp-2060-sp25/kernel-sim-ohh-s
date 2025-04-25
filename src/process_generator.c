@@ -7,22 +7,16 @@
 #include <sys/msg.h>
 #include "clk.h"
 #include "headers.h"
+#include "process_generator.h"
 #include "scheduler.h"
 
-#define RUN_TILL 5
-#define MAX_INPUT_PROCESSES 100
-
-void clear_resources(int);
-ProcessMessage** read_process_file(const char* filename, int* count);
-
-extern process_count;
-ProcessMessage** process_messages;
-int msgid;
 
 int main(int argc, char* argv[])
 {
+    int process_count;
+
     // Get List of processes
-    process_messages = read_process_file("processes.txt", &process_count);
+    process_parameters = read_process_file("processes.txt", &process_count);
 
     // Init IPC
     // Any file name
@@ -42,37 +36,43 @@ int main(int argc, char* argv[])
 
     if (clk_pid == 0)
     {
-        signal(SIGINT, clear_resources);
+        signal(SIGINT, process_generator_cleanup);
         sync_clk();
 
         int remaining_processes = process_count;
         int crt_clk = get_clk();
-        int old_clk = 0;
+        int old_clk = -1;
         while (remaining_processes > 0)
         {
             // Ensure that we move by increments of 1
             while ((crt_clk = get_clk()) - old_clk == 0)
-                usleep(1000); // 1ms sleep;
+                usleep(1); // 1us sleep;
             old_clk = crt_clk;
 
             printf("current time is %d\n", crt_clk);
 
             int messages_sent = 0;
-            // Check the ProcessMessages[] for processes whose arrival time == crt_clk, and send them
+            // Check the process_parameters[] for processes whose arrival time == crt_clk, and send them
             for (int i = 0; i < process_count; i++)
             {
-                if (process_messages[i] != NULL && process_messages[i]->arrival_time == crt_clk)
+                if (process_parameters[i] != NULL && process_parameters[i]->arrival_time == crt_clk)
                 {
                     messages_sent++;
+                    PCB proc_pcb = {
+                        1, process_count - remaining_processes, process_parameters[i]->process_id,
+                        process_parameters[i]->arrival_time, 0,
+                        process_parameters[i]->runtime, process_parameters[i]->priority, 0, crt_clk, -1, -1, -1, -1, -1,
+                        READY,
+                    };
                     // Send the message
-                    if (msgsnd(msgid, process_messages[i], sizeof(ProcessMessage) - sizeof(long), 0) == -1)
+                    if (msgsnd(msgid, &proc_pcb, sizeof(PCB), 0) == -1)
                     {
                         perror("Error sending message");
                     }
 
                     // Cleanup
-                    free(process_messages[i]);
-                    process_messages[i] = NULL;
+                    free(process_parameters[i]);
+                    process_parameters[i] = NULL;
                     remaining_processes--;
                 }
             }
@@ -84,15 +84,20 @@ int main(int argc, char* argv[])
         }
 
         printf("All processes have been sent, exiting...\n");
-        clear_resources(0);
-        destroy_clk(1);
+        process_generator_cleanup(0);
         exit(0);
     }
     else
     {
-        init_clk();
-        sync_clk();
-        run_clk();
+        pid_t scheduler_pid = fork();
+        if (scheduler_pid == 0)
+            run_scheduler();
+        else
+        {
+            init_clk();
+            sync_clk();
+            run_clk();
+        }
     }
 
     return 0;
@@ -102,7 +107,7 @@ int main(int argc, char* argv[])
  * Reads the input file and returns a ProcessMessage**, a pointer to an
  * array of ProcessMessage, of size MAX_INPUT_PROCESSES
  */
-ProcessMessage** read_process_file(const char* filename, int* count)
+processParameters** read_process_file(const char* filename, int* count)
 {
     FILE* file = fopen(filename, "r");
 
@@ -127,7 +132,8 @@ ProcessMessage** read_process_file(const char* filename, int* count)
 
     // Allocate memory for process message pointers
     /// Assuming a maximum of MAX_INPUT_PROCESSES processes
-    ProcessMessage** process_messages = (ProcessMessage**)malloc(MAX_INPUT_PROCESSES * sizeof(ProcessMessage*));
+    processParameters** process_messages = (processParameters**)
+        malloc(MAX_INPUT_PROCESSES * sizeof(processParameters*));
 
     // Initialize all pointers to NULL
     for (int i = 0; i < MAX_INPUT_PROCESSES; i++)
@@ -156,7 +162,7 @@ ProcessMessage** read_process_file(const char* filename, int* count)
         if (sscanf(line, "%d\t%d\t%d\t%d", &id, &arrival, &runtime, &priority) == 4)
         {
             // Allocate memory for each ProcessMessage
-            process_messages[index] = (ProcessMessage*)malloc(sizeof(ProcessMessage));
+            process_messages[index] = (processParameters*)malloc(sizeof(processParameters));
 
             // Set values
             process_messages[index]->mtype = 1; // Default message type
@@ -176,20 +182,22 @@ ProcessMessage** read_process_file(const char* filename, int* count)
     return process_messages;
 }
 
-void clear_resources(int signum)
+
+void process_generator_cleanup(int signum)
 {
+    signal(signum, process_generator_cleanup);
     // Free each ProcessMessage
     for (int i = 0; i < process_count; i++)
     {
-        if (process_messages[i] != NULL)
+        if (process_parameters[i] != NULL)
         {
-            free(process_messages[i]);
-            process_messages[i] = NULL;
+            free(process_parameters[i]);
+            process_parameters[i] = NULL;
         }
     }
 
     // Free the array of pointers
-    free(process_messages);
+    free(process_parameters);
 
     // Remove message queue
     if (msgid != -1)
@@ -197,7 +205,7 @@ void clear_resources(int signum)
         msgctl(msgid, IPC_RMID, NULL);
     }
 
-    printf("Resources cleaned up\n");
+    printf("[PROC_GENERATOR] Resources cleaned up\n");
 
     if (signum != 0)
     {

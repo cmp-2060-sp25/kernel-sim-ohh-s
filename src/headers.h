@@ -8,7 +8,9 @@ typedef struct
     int arrival_time;
     int runtime;
     int priority;
-} ProcessMessage;
+} processParameters;
+
+#define MAX_INPUT_PROCESSES 100
 
 #include "data_structures/min_heap.h"
 #include "scheduler_utils.h"
@@ -20,7 +22,6 @@ typedef struct
 // Extra States (IDK if we'll use them)
 #define BLOCKED 2
 #define PAUSED 3
-#define PAUSED 4
 
 // Scheduling algorithms
 #define HPF 1
@@ -30,4 +31,3 @@ typedef struct
 // Message types
 #define PROCESS_ARRIVED 1
 #define PROCESS_FINISHED 2
-

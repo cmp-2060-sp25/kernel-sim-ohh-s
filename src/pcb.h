@@ -2,7 +2,9 @@
 
 // Process Control Block (PCB)
 typedef struct {
-    int id;               
+    long mtype;
+    int id;
+    int pid;
     int arrival_time;      
     int runtime;         
     int remaining_time;
@@ -14,6 +16,5 @@ typedef struct {
     int response_time;     
     int turnaround_time;  
     float weighted_turnaround; 
-    int status;             
-    int pid;             
+    int status;
 } PCB;
