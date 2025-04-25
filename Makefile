@@ -1,53 +1,68 @@
 TARGET_EXEC := os-sim
+KERNEL_EXEC := os-sim
+PROCESS_EXEC := process
 
 BUILD_DIR := ./build
-SRC_DIRS := ./src
+KERNEL_DIR := ./src/kernel
+PROCESS_DIR := ./src/process
+DATA_STRUCTURES_DIR := ./src/data_structures
 
-# Find all the C and C++ files we want to compile
-SRCS := $(shell find $(SRC_DIRS) -name '*.cpp' -or -name '*.c' -or -name '*.s')
+# Find source files for each component
+KERNEL_ONLY_SRCS := $(shell find $(KERNEL_DIR) -name '*.cpp' -or -name '*.c' -not -name 'clk.c' -or -name '*.s')
+PROCESS_SRCS := $(shell find $(PROCESS_DIR) -name '*.cpp' -or -name '*.c' -or -name '*.s')
+DATA_STRUCTURES_SRCS := $(shell find $(DATA_STRUCTURES_DIR) -name '*.cpp' -or -name '*.c' -or -name '*.s')
+CLK_SRCS := $(KERNEL_DIR)/clk.c
 
-# Prepends BUILD_DIR and appends .o to every src file
-# As an example, ./your_dir/hello.cpp turns into ./build/./your_dir/hello.cpp.o
-OBJS := $(SRCS:%=$(BUILD_DIR)/%.o)
+# Convert source files to object files
+KERNEL_ONLY_OBJS := $(KERNEL_ONLY_SRCS:%=$(BUILD_DIR)/%.o)
+PROCESS_OBJS := $(PROCESS_SRCS:%=$(BUILD_DIR)/%.o)
+DATA_STRUCTURES_OBJS := $(DATA_STRUCTURES_SRCS:%=$(BUILD_DIR)/%.o)
+CLK_OBJS := $(CLK_SRCS:%=$(BUILD_DIR)/%.o)
 
-# String substitution (suffix version without %).
-# As an example, ./build/hello.cpp.o turns into ./build/hello.cpp.d
-DEPS := $(OBJS:.o=.d)
+# All dependencies
+DEPS := $(KERNEL_ONLY_OBJS:.o=.d) $(PROCESS_OBJS:.o=.d) $(DATA_STRUCTURES_OBJS:.o=.d) $(CLK_OBJS:.o=.d)
 
-# Every folder in ./src will need to be passed to GCC so that it can find header files
-INC_DIRS := $(shell find $(SRC_DIRS) -type d)
-# Add a prefix to INC_DIRS. So moduleA would become -ImoduleA. GCC understands this -I flag
+# Include directories
+INC_DIRS := $(shell find ./src -type d)
 INC_FLAGS := $(addprefix -I,$(INC_DIRS)) -g
 
-# The -MMD and -MP flags together generate Makefiles for us!
-# These files will have .d instead of .o as the output.
+# Compiler flags
 CPPFLAGS := $(INC_FLAGS) -MMD -MP
-
 LDFLAGS := -lreadline
 
-all: $(BUILD_DIR)/$(TARGET_EXEC)
-	mv $(BUILD_DIR)/$(TARGET_EXEC) .
-	rm -r $(BUILD_DIR)
+# Default target builds everything
+all: kernel process
 
-# The final build step.
-$(BUILD_DIR)/$(TARGET_EXEC): $(OBJS)
-	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
+# Kernel executable
+kernel: $(KERNEL_ONLY_OBJS) $(CLK_OBJS) $(DATA_STRUCTURES_OBJS)
+	@echo "Building kernel..."
+	mkdir -p $(BUILD_DIR)
+	$(CXX) $(KERNEL_ONLY_OBJS) $(CLK_OBJS) $(DATA_STRUCTURES_OBJS) -o $(KERNEL_EXEC) $(LDFLAGS)
+
+# Process executable
+process: $(PROCESS_OBJS) $(CLK_OBJS) $(DATA_STRUCTURES_OBJS)
+	@echo "Building process component..."
+	mkdir -p $(BUILD_DIR)
+	$(CC) $(PROCESS_OBJS) $(CLK_OBJS) $(DATA_STRUCTURES_OBJS) -o $(PROCESS_EXEC) $(LDFLAGS)
 
 # Build step for C source
 $(BUILD_DIR)/%.c.o: %.c
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
-.PHONY: all test
-test: all
-	for filename in ./test_scripts/*.sh; do \
-		echo "Running script: $$filename \nOutput:"; \
-		./cmpsh "$$filename"; \
-	done
+# Build step for C++ source
+$(BUILD_DIR)/%.cpp.o: %.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-.PHONY: clean
+# Build step for assembly
+$(BUILD_DIR)/%.s.o: %.s
+	mkdir -p $(dir $@)
+	$(AS) $(ASFLAGS) -c $< -o $@
+
+.PHONY: all kernel process clean
 clean:
-	rm -r $(BUILD_DIR)
-	rm ./$(TARGET_EXEC)
+	rm -rf $(BUILD_DIR)
+	rm -f ./$(KERNEL_EXEC) ./$(PROCESS_EXEC)
 
 -include $(DEPS)

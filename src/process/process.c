@@ -1,5 +1,4 @@
 #include "process.h"
-#include "clk.h"
 #include <signal.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -7,6 +6,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
+#include "kernel/clk.h"
 
 #define LOCK_FILE "/tmp/process.lock"
 
