@@ -8,15 +8,69 @@
 #include "clk.h"
 #include "headers.h"
 #include "process_generator.h"
-#include "scheduler.h"
 
+#include <string.h>
+
+#include "scheduler.h"
+int scheduler_type = -1; // Default invalid value
+char* process_file = "processes.txt"; // Default filename
+int quantum = 2; // Default quantum value
 
 int main(int argc, char* argv[])
 {
     int process_count;
 
+    // Parse command line arguments
+    int opt;
+    while ((opt = getopt(argc, argv, "s:f:q:")) != -1)
+    {
+        switch (opt)
+        {
+        case 's':
+            if (strcmp(optarg, "rr") == 0)
+            {
+                scheduler_type = 0; // RR
+            }
+            else if (strcmp(optarg, "hpf") == 0)
+            {
+                scheduler_type = 1; // HPF
+            }
+            else if (strcmp(optarg, "srtn") == 0)
+            {
+                scheduler_type = 2; // SRTN
+            }
+            else
+            {
+                fprintf(stderr, "Invalid scheduler type: %s\n", optarg);
+                fprintf(stderr, "Valid options are: rr, hpf, srtn\n");
+                exit(EXIT_FAILURE);
+            }
+            printf("Using scheduler: %s\n", optarg);
+            break;
+        case 'f':
+            process_file = optarg;
+            printf("[MAIN] Reading processes from: %s\n", process_file);
+            break;
+        case 'q':
+            quantum = atoi(optarg);
+            printf("[MAIN] Quantum set to: %d\n", quantum);
+            break;
+        default:
+            fprintf(stderr, "Usage: %s -s <scheduling-algorithm> -f <processes-text-file> [-q <quantum>]\n", argv[0]);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // Check if scheduler type is provided
+    if (scheduler_type == -1)
+    {
+        fprintf(stderr, "Scheduler type must be specified with -s option\n");
+        fprintf(stderr, "Usage: %s -s <scheduling-algorithm> -f <processes-text-file>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
     // Get List of processes
-    process_parameters = read_process_file("processes.txt", &process_count);
+    process_parameters = read_process_file(process_file, &process_count);
 
     // Init IPC
     // Any file name
@@ -52,11 +106,31 @@ int main(int argc, char* argv[])
             printf("current time is %d\n", crt_clk);
 
             int messages_sent = 0;
-            // Check the process_parameters[] for processes whose arrival time == crt_clk, and send them
+            // Check the process_parameters[] for processes whose arrival time == crt_clk, and fork/send them
             for (int i = 0; i < process_count; i++)
             {
                 if (process_parameters[i] != NULL && process_parameters[i]->arrival_time == crt_clk)
                 {
+                    // Fork the process at its arrival time
+                    pid_t pid = fork();
+                    if (pid == 0)
+                    {
+                        char runtime_str[16];
+                        snprintf(runtime_str, sizeof(runtime_str), "%d", process_parameters[i]->runtime);
+                        execl("./process", "process", runtime_str, (char*)NULL);
+                        perror("execl failed");
+                        exit(1);
+                    }
+                    else if (pid > 0)
+                    {
+                        process_parameters[i]->process_id = pid;
+                        kill(pid, SIGTSTP); // Immediately stop the child process
+                    }
+                    else
+                    {
+                        perror("fork failed");
+                    }
+
                     messages_sent++;
                     PCB proc_pcb = {
                         1, process_count - remaining_processes, process_parameters[i]->process_id,
@@ -78,9 +152,7 @@ int main(int argc, char* argv[])
             }
 
             if (messages_sent > 0)
-            {
                 printf("Sent %d message(s) to scheduler\n", messages_sent);
-            }
         }
 
         printf("All processes have been sent, exiting...\n");
@@ -91,7 +163,7 @@ int main(int argc, char* argv[])
     {
         pid_t scheduler_pid = fork();
         if (scheduler_pid == 0)
-            run_scheduler();
+            run_scheduler(scheduler_type); // Pass scheduler type as an integer
         else
         {
             init_clk();
@@ -113,7 +185,7 @@ processParameters** read_process_file(const char* filename, int* count)
 
     if (!file)
     {
-        perror("Error opening file");
+        perror("[MAIN] Error opening file");
         exit(1);
     }
 
@@ -204,7 +276,7 @@ void process_generator_cleanup(int signum)
     {
         msgctl(msgid, IPC_RMID, NULL);
     }
-
+    destroy_clk(1);
     printf("[PROC_GENERATOR] Resources cleaned up\n");
 
     if (signum != 0)
