@@ -49,6 +49,7 @@ PCB* hpf(min_heap_t* ready_queue, int current_time)
         PCB* next_process = min_heap_extract_min(ready_queue);
         while (next_process->remaining_time == 0)
         {
+            // @TODO: ASK KHALED
             log_process_state(next_process, "started", current_time);
             log_process_state(next_process, "finished", current_time);
             if (min_heap_is_empty(ready_queue))
@@ -69,8 +70,9 @@ PCB* hpf(min_heap_t* ready_queue, int current_time)
     return NULL;
 }
 
-PCB* srtn(min_heap_t* ready_queue, int current_time)
+PCB* srtn(min_heap_t* ready_queue)
 {
+    int current_time = get_clk();
     if (!min_heap_is_empty(ready_queue))
     {
         PCB* next_process = min_heap_extract_min(ready_queue);
@@ -99,13 +101,15 @@ PCB* srtn(min_heap_t* ready_queue, int current_time)
 // RR algorithm
 PCB* rr(Queue* ready_queue, int current_time)
 {
-    if(!isQueueEmpty(ready_queue)) {
+    if (!isQueueEmpty(ready_queue))
+    {
         PCB* next_process = dequeue(ready_queue);
         while (next_process->remaining_time == 0)
         {
             next_process->status = TERMINATED;
             next_process->finish_time = current_time;
-            next_process->waiting_time = (next_process->finish_time - next_process->arrival_time) - next_process->runtime;
+            next_process->waiting_time = (next_process->finish_time - next_process->arrival_time) - next_process->
+                runtime;
             next_process->turnaround_time = next_process->finish_time - next_process->arrival_time;
             next_process->weighted_turnaround = (float)next_process->turnaround_time / next_process->runtime;
             log_process_state(next_process, "finished", current_time);
@@ -114,7 +118,8 @@ PCB* rr(Queue* ready_queue, int current_time)
             next_process = dequeue(ready_queue);
         }
         next_process->status = RUNNING;
-        next_process->waiting_time = (current_time - next_process->arrival_time) - (next_process->runtime - next_process->remaining_time);
+        next_process->waiting_time = (current_time - next_process->arrival_time) - (next_process->runtime - next_process
+            ->remaining_time);
         if (next_process->start_time == -1)
         {
             next_process->start_time = current_time;
@@ -151,7 +156,7 @@ void log_process_state(PCB* process, char* state, int time)
     else
     {
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
-                time, process->id, state, process->arrival_time, process->runtime,
+                time, process->pid, state, process->arrival_time, process->runtime,
                 process->remaining_time, process->waiting_time);
     }
 

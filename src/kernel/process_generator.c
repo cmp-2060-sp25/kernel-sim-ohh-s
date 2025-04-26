@@ -149,7 +149,7 @@ int main(int argc, char* argv[])
                         PCB proc_pcb = {
                             1, process_parameters[i]->id, process_parameters[i]->pid,
                             process_parameters[i]->arrival_time, process_parameters[i]->runtime,
-                            process_parameters[i]->runtime, process_parameters[i]->priority, 0, crt_clk, -1, -1, -1, -1,
+                            process_parameters[i]->runtime, process_parameters[i]->priority, 0, -1, -1, -1, -1, -1,
                             -1,
                             READY,
                         };

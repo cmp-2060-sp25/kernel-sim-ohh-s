@@ -31,9 +31,9 @@ typedef struct
 #define PAUSED 3
 
 // Scheduling algorithms
+#define RR 0
 #define HPF 1
 #define SRTN 2
-#define RR 3
 
 // Message types
 #define PROCESS_ARRIVED 1

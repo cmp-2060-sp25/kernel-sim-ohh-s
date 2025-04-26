@@ -83,19 +83,38 @@ void run_scheduler()
         }
         else if (scheduler_type == SRTN)
         {
-            running_process = srtn(min_heap_queue, crt_clk);
+            running_process = srtn(min_heap_queue);
             if (running_process == NULL) continue; // there is no process to run
-
+            int remaining_time = running_process->remaining_time;
             kill(running_process->pid,SIGCONT);
             int crt_time = get_clk();
             int old_time = crt_time;
-            while ((crt_time = get_clk()) == old_time); // busy wait the scheduler for a clk
-            kill(running_process->pid,SIGSTOP); // Pause the child for context switching
-            running_process->status = READY;
-            running_process->remaining_time -= crt_time - old_time;
-            running_process->last_run_time = crt_time;
-            if (running_process->remaining_time)
-                min_heap_insert(min_heap_queue, running_process);
+
+            short has_received = 0;
+
+            while (remaining_time > 0 && !has_received)
+            {
+                while ((crt_time = get_clk()) == old_time)
+                {
+                    usleep(1000);
+                    if (receive_processes() == 0) has_received = 1;
+                } // busy wait the scheduler for a clk
+
+                remaining_time -= crt_time - old_time;
+            }
+
+            // If the child hasn't finished execution else it would be null
+            if (running_process != NULL)
+            {
+                if (remaining_time > 0)
+                {
+                    kill(running_process->pid,SIGTSTP); // Pause the child for context switching
+                    running_process->status = READY;
+                    running_process->remaining_time -= crt_time - old_time;
+                    running_process->last_run_time = crt_time;
+                    min_heap_insert(min_heap_queue, running_process);
+                }
+            }
         }
         else if (scheduler_type == RR)
         {
@@ -103,24 +122,27 @@ void run_scheduler()
             if (running_process == NULL) continue; // there is no process to run
             kill(running_process->pid,SIGCONT);
             int crt_time = get_clk();
-            int time_to_run = (running_process->remaining_time < quantum) 
-                ? running_process->remaining_time 
-                : quantum;
+            int time_to_run = (running_process->remaining_time < quantum)
+                                  ? running_process->remaining_time
+                                  : quantum;
             int end_time = crt_time + time_to_run;
             while ((crt_time = get_clk()) < end_time); // busy wait the scheduler for a quantum
-            kill(running_process->pid,SIGSTOP); // Pause the child for context switching
+            kill(running_process->pid,SIGTSTP); // Pause the child for context switching
             running_process->status = READY;
             running_process->remaining_time -= time_to_run;
             running_process->last_run_time = crt_time;
             if (running_process->remaining_time)
                 enqueue(rr_queue, running_process);
-            else {
+            else
+            {
                 running_process->status = TERMINATED;
                 running_process->finish_time = crt_time;
-                running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) - running_process->runtime;
+                running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) -
+                    running_process->runtime;
                 running_process->turnaround_time = running_process->finish_time - running_process->arrival_time;
-                running_process->weighted_turnaround = (float)running_process->turnaround_time / running_process->runtime;
-                log_process_state(running_process, "finished", current_time);
+                running_process->weighted_turnaround = (float)running_process->turnaround_time / running_process->
+                    runtime;
+                log_process_state(running_process, "finished", get_clk());
             }
         }
         else
@@ -194,6 +216,8 @@ int receive_processes(void)
 
 void scheduler_cleanup(int signum)
 {
+    printf("[SCHEDULER] scheduler_cleanup CALLED\n");
+
     if (log_file)
     {
         fclose(log_file);
@@ -252,7 +276,7 @@ void scheduler_cleanup(int signum)
         finished_process_info = NULL;
     }
 
-    printf("[SCHEDULER] Resources cleaned up \n");
+    printf("[SCHEDULER] scheduler_cleanup FINISHED \n");
 
     if (signum != 0)
     {
@@ -309,6 +333,7 @@ void child_cleanup()
     {
         printf("Requested to cleanup none????\n");
     }
+    printf("[SCHEDULER] CHILD_CLEANUP FINISHED\n");
 }
 
 int init_scheduler()
