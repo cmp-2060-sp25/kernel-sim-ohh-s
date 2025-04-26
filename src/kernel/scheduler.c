@@ -99,8 +99,8 @@ void run_scheduler()
                     usleep(1000);
                     if (receive_processes() == 0) has_received = 1;
                 } // busy wait the scheduler for a clk
-
                 remaining_time -= crt_time - old_time;
+                old_time = crt_time;
             }
 
             // If the child hasn't finished execution else it would be null
@@ -108,11 +108,13 @@ void run_scheduler()
             {
                 if (remaining_time > 0)
                 {
+                    printf("[SCHEDULER] SENDING SIGTSP TO %d\n", running_process->pid);
                     kill(running_process->pid,SIGTSTP); // Pause the child for context switching
                     running_process->status = READY;
                     running_process->remaining_time -= crt_time - old_time;
                     running_process->last_run_time = crt_time;
                     min_heap_insert(min_heap_queue, running_process);
+                    running_process = NULL;
                 }
             }
         }

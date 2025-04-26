@@ -16,13 +16,16 @@ void sigIntHandler(int signum)
     printf("Process %d received SIGINT. Terminating...\n", getpid());
     // Check if the lock file contains the current process's PID
     int lock_fd = open(LOCK_FILE, O_RDONLY);
-    if (lock_fd != -1) {
+    if (lock_fd != -1)
+    {
         char pid_buffer[16];
         ssize_t bytes_read = read(lock_fd, pid_buffer, sizeof(pid_buffer) - 1);
-        if (bytes_read > 0) {
+        if (bytes_read > 0)
+        {
             pid_buffer[bytes_read] = '\0'; // Null-terminate the string
             pid_t lock_pid = (pid_t)atoi(pid_buffer);
-            if (lock_pid == getpid()) {
+            if (lock_pid == getpid())
+            {
                 unlink(LOCK_FILE); // Only unlink if the PID matches
             }
         }
@@ -36,15 +39,18 @@ void sigStpHandler(int signum)
 {
     // Check if the lock file contains the current process's PID
     int lock_fd = open(LOCK_FILE, O_RDONLY);
-    if (lock_fd != -1) {
+    if (lock_fd != -1)
+    {
         char pid_buffer[16];
         ssize_t bytes_read = read(lock_fd, pid_buffer, sizeof(pid_buffer) - 1);
-        if (bytes_read > 0) {
+        if (bytes_read > 0)
+        {
             pid_buffer[bytes_read] = '\0'; // Null-terminate the string
             pid_t lock_pid = (pid_t)atoi(pid_buffer);
-            if (lock_pid == getpid()) {
+            if (lock_pid == getpid())
+            {
                 unlink(LOCK_FILE); // Only unlink if the PID matches
-                printf("Process %d received SIGTSTP. Pausing...\n", getpid()); 
+                printf("Process %d received SIGTSTP. Pausing...\n", getpid());
             }
         }
         close(lock_fd);
@@ -56,12 +62,16 @@ void sigStpHandler(int signum)
 void sigContHandler(int signum)
 {
     int lock_fd = open(LOCK_FILE, O_CREAT | O_EXCL | O_WRONLY, 0644);
-    if (lock_fd == -1) {
-        if (errno == EEXIST) {
+    if (lock_fd == -1)
+    {
+        if (errno == EEXIST)
+        {
             fprintf(stderr, "Error: Another instance of the process is already running.\n");
             kill(getpid(),SIGTSTP);
             return;
-        } else {
+        }
+        else
+        {
             perror("Error creating lock file");
             kill(getpid(),SIGTSTP);
             return;
@@ -82,19 +92,15 @@ void run_process(int runtime)
 {
     sync_clk();
     int start_time = get_clk(); // Get the current clock time
+    int current_time = start_time; // Get the updated clock time
 
     while (runtime > 0)
     {
-        int current_time = get_clk(); // Get the updated clock time
-
-        if (current_time > start_time)
-        {
-            runtime -= (current_time - start_time); // Decrement runtime
-            start_time = current_time; // Update start_time to current_time
-        }
+        while ((start_time = get_clk()) == current_time)
+            usleep(1000); // 10us
+        runtime -= (start_time - current_time); // Decrement runtime
+        current_time = start_time;
         printf("Process %d running. Remaining time: %d seconds.\n", getpid(), runtime);
-        if (runtime > 0)
-            sleep(1);
     }
 
     kill(process_generator_pid,SIGCHLD);
