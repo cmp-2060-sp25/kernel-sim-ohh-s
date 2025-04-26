@@ -47,7 +47,8 @@ void run_process(int runtime)
             start_time = current_time; // Update start_time to current_time
         }
         printf("Process %d running. Remaining time: %d seconds.\n", getpid(), runtime);
-        sleep(1);
+        if (runtime > 0)
+            sleep(1);
     }
 
     kill(process_generator_pid,SIGCHLD);
@@ -85,10 +86,6 @@ int main(int argc, char* argv[])
     snprintf(pid_str, sizeof(pid_str), "%d\n", getpid());
     write(lock_fd, pid_str, strlen(pid_str));
 
-    signal(SIGINT, sigIntHandler);
-    signal(SIGTSTP, sigStpHandler);
-    signal(SIGCONT, sigContHandler);
-
     if (argc < 3)
     {
         fprintf(stderr, "Usage: %s <runtime> <process_generator_pid>\n", argv[0]);
@@ -98,7 +95,7 @@ int main(int argc, char* argv[])
     }
 
     int runtime = atoi(argv[1]);
-    process_generator_pid = atoi(argv[1]);
+    process_generator_pid = atoi(argv[2]);
 
     if (runtime <= 0 || process_generator_pid <= 0)
     {
@@ -113,7 +110,6 @@ int main(int argc, char* argv[])
 
     printf("Process %d started with runtime %d seconds.\n", getpid(), runtime);
     run_process(runtime);
-
     unlink(LOCK_FILE); // Remove the lock file when the process finishes
     close(lock_fd);
     return 0;

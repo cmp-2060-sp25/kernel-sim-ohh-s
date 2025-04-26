@@ -59,7 +59,13 @@ void run_clk()
 
 int get_clk()
 {
-    return *shmaddr;
+    if (shmaddr == NULL)
+    {
+        perror("SHMADDR IS BEING ACCESSED ALTHOUGH NULL");
+        return -1;
+    }
+    else
+        return *shmaddr;
 }
 
 void sync_clk()

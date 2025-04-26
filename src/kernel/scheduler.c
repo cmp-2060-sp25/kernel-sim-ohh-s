@@ -9,9 +9,9 @@
 #include "min_heap.h"
 #include "queue.h"
 #include <sys/types.h>
-#include <sys/wait.h>
-
 #include "headers.h"
+
+extern finishedProcessInfo** finished_process_info;
 // Use pointers for both possible queue types
 min_heap_t* min_heap_queue = NULL;
 Queue* rr_queue = NULL;
@@ -19,17 +19,8 @@ Queue* rr_queue = NULL;
 extern int msgid;
 extern int scheduler_type;
 extern int quantum;
-
-void child_cleanup()
-{
-    printf("[SCHEDULER] CHILD_CLEANUP CALLED\n");
-    signal(SIGCHLD, child_cleanup);
-    if (running_process)
-        free(running_process);
-    else
-        printf("Requested to cleanup none????");
-    running_process = NULL;
-}
+extern finishedProcessInfo** finished_process_info;
+extern int finished_processes_count;
 
 void run_scheduler()
 {
@@ -51,7 +42,12 @@ void run_scheduler()
         while ((crt_clk = get_clk()) == old_clk) usleep(1000);
         old_clk = crt_clk;
 
-        receive_processes();
+        int receive_status = receive_processes();
+        if (receive_status == -2 && !process_count)
+        {
+            printf("Message queue has been closed. Terminating scheduler.\n");
+            break; // Exit the scheduling loop
+        }
 
         // --------- Scheduling Algorithm Dispatch ---------
         if (scheduler_type == HPF) // HPF
@@ -64,28 +60,26 @@ void run_scheduler()
             printf("RUNNING PID %d\n", running_process->pid);
 
             // Polling loop to check if process still exists
-            while (1)
+            pid_t rpid = running_process != NULL ? running_process->pid : -1;
+            do
             {
                 // Try sending signal 0 to process - this doesn't actually send a signal
-                // but checks if the process exists and we have permission to send signals
-                if (kill(running_process->pid, 0) < 0)
+                // but checks if the process exists, and we have permission to send signals
+                if (kill(rpid, 0) < 0)
                 {
                     if (errno == ESRCH)
                     {
                         // Process no longer exists
-                        printf("Process %d has terminated\n", running_process->pid);
+                        printf("Process %d has terminated\n", rpid);
                         break;
                     }
                 }
-
                 usleep(1000); // 1ms
-
-                // Allow scheduler to receive messages during polling
                 receive_processes();
+                // Allow scheduler to receive messages during polling    receive_processes();
+                rpid = running_process != NULL ? rpid : -1;
             }
-
-            // Process is done
-            printf("child exited\n");
+            while (rpid != -1);
         }
         else if (scheduler_type == SRTN)
         {
@@ -129,34 +123,48 @@ void run_scheduler()
                 log_process_state(running_process, "finished", current_time);
             }
         }
-
         else
         {
             fprintf(stderr, "Unknown scheduler_type: %d\n", scheduler_type);
             exit(EXIT_FAILURE);
         }
     }
+    // Must Be called before the clock is destoryed !!!
+    generate_statistics();
+    destroy_clk(1);
+    exit(0);
 }
 
-void receive_processes(void)
+int receive_processes(void)
 {
     if (msgid == -1)
-        return;
+        return -1;
 
     PCB received_pcb;
     size_t recv_val = msgrcv(msgid, &received_pcb, sizeof(PCB), 1, IPC_NOWAIT);
 
     if (recv_val == -1)
     {
-        if (errno != ENOMSG)
+        if (errno == ENOMSG)
+            return errno; // No message available
+        else if (errno == EIDRM || errno == EINVAL)
+        {
+            // EIDRM: Queue was removed
+            // EINVAL: Invalid queue ID (queue no longer exists)
+            // printf("Message queue has been closed or removed\n");
+            return -2; // Special return value to indicate queue closure
+        }
+        else
+        {
             perror("Error receiving message");
-        return;
+            return errno;
+        }
     }
 
     while (recv_val != -1)
     {
         printf("Received process ID: %d, arrival time: %d, remaining_time: %d at %d\n",
-               received_pcb.id, received_pcb.arrival_time, received_pcb.remaining_time, get_clk());
+               received_pcb.pid, received_pcb.arrival_time, received_pcb.remaining_time, get_clk());
 
         PCB* new_pcb = (PCB*)malloc(sizeof(PCB));
         if (!new_pcb)
@@ -173,29 +181,133 @@ void receive_processes(void)
 
         process_count++;
         recv_val = msgrcv(msgid, &received_pcb, sizeof(PCB) - sizeof(long), 1, IPC_NOWAIT);
+
+        if (recv_val == -1 && (errno == EIDRM || errno == EINVAL))
+        {
+            printf("Message queue has been closed or removed during processing\n");
+            return -2; // Queue was removed during processing
+        }
     }
+
+    return 0;
 }
 
 void scheduler_cleanup(int signum)
 {
-    signal(SIGINT, scheduler_cleanup);
-
-    generate_statistics();
     if (log_file)
-        fclose(log_file);
-
-    // Remove message queue
-    if (msgid != -1)
     {
-        msgctl(msgid, IPC_RMID, NULL);
+        fclose(log_file);
+        log_file = NULL;
     }
 
-    destroy_clk(0);
+    // Cleanup memory resources if they still exist
+    if (min_heap_queue)
+    {
+        // Free any remaining PCBs in the heap
+        while (min_heap_queue->size > 0)
+        {
+            PCB* pcb = min_heap_extract_min(min_heap_queue);
+            if (pcb)
+                free(pcb);
+        }
+        free(min_heap_queue);
+        min_heap_queue = NULL;
+    }
+
+    if (rr_queue)
+    {
+        // Free any remaining PCBs in the queue
+        while (!isQueueEmpty(rr_queue))
+        {
+            PCB* pcb = dequeue(rr_queue);
+            if (pcb)
+                free(pcb);
+        }
+        free(rr_queue);
+        rr_queue = NULL;
+    }
+
+    // Don't try to remove the message queue that's already been removed
+    if (msgid != -1)
+    {
+        // Check if queue still exists
+        struct msqid_ds queue_info;
+        if (msgctl(msgid, IPC_STAT, &queue_info) != -1)
+        {
+            msgctl(msgid, IPC_RMID, NULL);
+        }
+        msgid = -1;
+    }
+
+    for (int i = 0; i < MAX_INPUT_PROCESSES; i++)
+        if (finished_process_info[i] != NULL)
+        {
+            free(finished_process_info[i]);
+            finished_process_info[i] = NULL;
+        }
+
+    if (finished_process_info != NULL)
+    {
+        free(finished_process_info);
+        finished_process_info = NULL;
+    }
+
     printf("[SCHEDULER] Resources cleaned up \n");
 
     if (signum != 0)
     {
         exit(signum);
+    }
+}
+
+void child_cleanup()
+{
+    if (running_process == NULL) return;;
+
+    sync_clk();
+    signal(SIGCHLD, child_cleanup);
+    printf("[SCHEDULER] CHILD_CLEANUP CALLED\n");
+
+    if (running_process)
+    {
+        int current_time = get_clk();
+        running_process->finish_time = current_time;
+        log_process_state(running_process, "finished", current_time);
+        if (finished_processes_count < MAX_INPUT_PROCESSES)
+        {
+            if (finished_process_info[finished_processes_count] == NULL)
+            {
+                finished_process_info[finished_processes_count] = (finishedProcessInfo*)malloc(
+                    sizeof(finishedProcessInfo));
+                if (!finished_process_info[finished_processes_count])
+                {
+                    perror("Failed to malloc finished_process_info");
+                }
+                else
+                {
+                    // Only access if malloc succeeded
+                    finished_process_info[finished_processes_count]->ta = current_time - running_process
+                        ->arrival_time;
+                    finished_process_info[finished_processes_count]->wta = (float)(finished_process_info[
+                        finished_processes_count]->ta) / running_process->runtime;
+                    finished_process_info[finished_processes_count]->waiting_time = running_process->waiting_time;
+                }
+            }
+
+            process_count--;
+            finished_processes_count++;
+        }
+        else
+        {
+            printf("WARNING: Exceeded maximum number of processes!\n");
+        }
+
+        free(running_process);
+        running_process = NULL;
+    }
+    else
+    {
+        printf("Requested to cleanup none????\n");
     }
 }
 
@@ -241,6 +353,19 @@ int init_scheduler()
         return -1;
     }
     fprintf(log_file, "#At\ttime\tx\tprocess\ty\tstate\tarr\tw\ttotal\tz\tremain\ty\twait\tk\n");
+
+    finished_processes_count = 0;
+    finished_process_info = (finishedProcessInfo**)malloc(MAX_INPUT_PROCESSES * sizeof(finishedProcessInfo*));
+
+    if (!finished_process_info)
+    {
+        perror("Failed to allocate memory for PCB");
+        return -1;
+    }
+
+    // Initialize all pointers to NULL
+    for (int i = 0; i < MAX_INPUT_PROCESSES; i++)
+        finished_process_info[i] = NULL;
 
     printf("Scheduler initialized successfully at time %d\n", current_time);
     return 0;

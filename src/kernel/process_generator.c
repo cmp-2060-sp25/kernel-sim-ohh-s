@@ -9,6 +9,8 @@
 #include "headers.h"
 #include "process_generator.h"
 #include <string.h>
+#include <sys/wait.h>
+
 #include "scheduler.h"
 int scheduler_type = -1; // Default invalid value
 char* process_file = "processes.txt"; // Default filename
@@ -87,6 +89,7 @@ int main(int argc, char* argv[])
      * Fork -> sends the processes at the appropriate time to the scheduler
      * Parent -> runs the clk
      */
+    pid_t process_generator_pid = getpid();
     pid_t clk_pid = fork();
     // Child b
     // Child -> Fork processes and sends their pcb to the scheduler at the appropriate time
@@ -97,6 +100,7 @@ int main(int argc, char* argv[])
         if (scheduler_pid == 0)
         {
             signal(SIGINT, process_generator_cleanup);
+            signal(SIGCHLD, child_process_handler);
             sync_clk();
 
             int remaining_processes = process_count;
@@ -118,16 +122,15 @@ int main(int argc, char* argv[])
                 {
                     if (process_parameters[i] != NULL && process_parameters[i]->arrival_time == crt_clk)
                     {
-                        char runtime_str[16];
-                        snprintf(runtime_str, sizeof(runtime_str), "%d", process_parameters[i]->runtime);
-                        char pid_str[16];
-                        snprintf(pid_str, sizeof(pid_str), "%d", getppid());
-                        printf("[CHILD A] Sending Pid: %d\n", getppid());
-
                         // Fork the process at its arrival time
                         pid_t pid = fork();
                         if (pid == 0)
                         {
+                            char runtime_str[16];
+                            snprintf(runtime_str, sizeof(runtime_str), "%d", process_parameters[i]->runtime);
+                            char pid_str[16];
+                            snprintf(pid_str, sizeof(pid_str), "%d", process_generator_pid);
+                            // printf("[CHILD A] Sending Pid: %d\n", process_generator_pid);
                             execl("./process", "process", runtime_str, pid_str, (char*)NULL);
                             perror("execl failed");
                             exit(1);
@@ -145,7 +148,7 @@ int main(int argc, char* argv[])
                         messages_sent++;
                         PCB proc_pcb = {
                             1, process_parameters[i]->id, process_parameters[i]->pid,
-                            process_parameters[i]->arrival_time, 0,
+                            process_parameters[i]->arrival_time, process_parameters[i]->runtime,
                             process_parameters[i]->runtime, process_parameters[i]->priority, 0, crt_clk, -1, -1, -1, -1,
                             -1,
                             READY,
@@ -269,10 +272,22 @@ processParameters** read_process_file(const char* filename, int* count)
     return process_messages;
 }
 
+void child_process_handler(int signum)
+{
+    int status;
+    pid_t pid;
+
+    // Reap all terminated children
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+    {
+        printf("[PROC_GENERATOR] Cleaned up child process PID: %d\n", pid);
+    }
+}
 
 void process_generator_cleanup(int signum)
 {
     signal(signum, process_generator_cleanup);
+
     // Free each ProcessMessage
     for (int i = 0; i < process_count; i++)
     {
@@ -283,9 +298,45 @@ void process_generator_cleanup(int signum)
         }
     }
 
-    // Free the array of pointers
-    free(process_parameters);
+    if (process_parameters != NULL)
+        free(process_parameters);
 
+    // Wait until message queue is empty before removing it
+    if (msgid != -1)
+    {
+        struct msqid_ds queue_info;
+
+        // Check if there are messages in the queue
+        while (1)
+        {
+            if (msgctl(msgid, IPC_STAT, &queue_info) == -1)
+            {
+                perror("Error getting message queue stats");
+                break;
+            }
+
+            // If no messages are left in the queue, we can safely remove it
+            if (queue_info.msg_qnum == 0)
+            {
+                printf("[PROC_GENERATOR] Message queue is empty, removing it\n");
+                break;
+            }
+
+            printf("[PROC_GENERATOR] Waiting for queue to empty: %ld messages remaining\n",
+                   queue_info.msg_qnum);
+            usleep(100000); // Sleep for 100ms before checking again
+        }
+
+        // Now remove the message queue
+        if (msgctl(msgid, IPC_RMID, NULL) == -1)
+        {
+            perror("Error removing message queue");
+        }
+        else
+        {
+            printf("[PROC_GENERATOR] Message queue removed successfully\n");
+        }
+    }
 
     destroy_clk(0);
     printf("[PROC_GENERATOR] Resources cleaned up\n");

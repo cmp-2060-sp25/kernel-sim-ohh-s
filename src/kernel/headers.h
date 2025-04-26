@@ -11,6 +11,13 @@ typedef struct
     int priority;
 } processParameters;
 
+typedef struct
+{
+    int ta; // process->finish_time - process->arrival_time;
+    float wta; // (float)ta / process->runtime;
+    int waiting_time;
+} finishedProcessInfo;
+
 #define MAX_INPUT_PROCESSES 100
 
 
