@@ -9,6 +9,8 @@
 #include "min_heap.h"
 #include "queue.h"
 #include <sys/types.h>
+#include <sys/wait.h>
+
 #include "headers.h"
 
 extern finishedProcessInfo** finished_process_info;
@@ -106,10 +108,47 @@ void run_scheduler()
             // If the child hasn't finished execution else it would be null
             if (running_process != NULL)
             {
+                if (remaining_time == 0)
+                {
+                    pid_t rpid = running_process != NULL ? running_process->pid : -1;
+                    do
+                    {
+                        // Try sending signal 0 to process - this doesn't actually send a signal
+                        // but checks if the process exists, and we have permission to send signals
+                        if (kill(rpid, 0) < 0)
+                        {
+                            if (errno == ESRCH)
+                            {
+                                // Process no longer exists
+                                // printf("Process %d has terminated\n", rpid);
+                                break;
+                            }
+                        }
+                        usleep(1000); // 1ms
+                        receive_processes();
+                        // Allow scheduler to receive messages during polling    receive_processes();
+                        rpid = running_process != NULL ? rpid : -1;
+                    }
+                    while (rpid != -1);
+                }
+
                 if (remaining_time > 0)
                 {
                     printf("[SCHEDULER] SENDING SIGTSP TO %d\n", running_process->pid);
-                    kill(running_process->pid,SIGTSTP); // Pause the child for context switching
+                    kill(running_process->pid, SIGTSTP); // Pause the child for context switching
+
+                    // Wait for the process to actually stop
+                    while (1)
+                    {
+                        // Check if the lock file has been removed (indicating process is stopped)
+                        if (access("/tmp/process.lock", F_OK) != 0)
+                        {
+                            // Lock file doesn't exist, so process is stopped
+                            break;
+                        }
+                        usleep(1); // Small delay before checking again
+                    }
+
                     running_process->status = READY;
                     running_process->remaining_time -= crt_time - old_time;
                     running_process->last_run_time = crt_time;
