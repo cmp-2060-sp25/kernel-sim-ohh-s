@@ -10,7 +10,7 @@ int init_scheduler();
 void generate_statistics();
 int compare_processes(const void* a, const void* b);
 void log_process_state(PCB* process, char* state, int time);
-void receive_processes(int);
+void receive_processes(void);
 
 // Global variables declarations (extern)
 extern int current_time;

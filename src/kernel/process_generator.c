@@ -15,6 +15,7 @@ char* process_file = "processes.txt"; // Default filename
 int quantum = 2; // Default quantum value
 processParameters** process_parameters;
 int msgid;
+key_t key;
 
 int main(int argc, char* argv[])
 {
@@ -74,7 +75,7 @@ int main(int argc, char* argv[])
 
     // Init IPC
     // Any file name
-    key_t key = ftok("process_generator", 65);
+    key = ftok("process_generator", 65);
     msgid = msgget(key, 0666 | IPC_CREAT);
     if (msgid == -1)
     {
@@ -117,13 +118,17 @@ int main(int argc, char* argv[])
                 {
                     if (process_parameters[i] != NULL && process_parameters[i]->arrival_time == crt_clk)
                     {
+                        char runtime_str[16];
+                        snprintf(runtime_str, sizeof(runtime_str), "%d", process_parameters[i]->runtime);
+                        char pid_str[16];
+                        snprintf(pid_str, sizeof(pid_str), "%d", getppid());
+                        printf("[CHILD A] Sending Pid: %d\n", getppid());
+
                         // Fork the process at its arrival time
                         pid_t pid = fork();
                         if (pid == 0)
                         {
-                            char runtime_str[16];
-                            snprintf(runtime_str, sizeof(runtime_str), "%d", process_parameters[i]->runtime);
-                            execl("./process", "process", runtime_str, (char*)NULL);
+                            execl("./process", "process", runtime_str, pid_str, (char*)NULL);
                             perror("execl failed");
                             exit(1);
                         }
@@ -169,14 +174,17 @@ int main(int argc, char* argv[])
             exit(0);
         }
         else
-            run_scheduler();
+        {
+            // Parent
+            init_clk();
+            sync_clk();
+            run_clk();
+        }
     }
     else
     {
-        // Parent
-        init_clk();
-        sync_clk();
-        run_clk();
+        printf("[MAIN] Running Scheduler with pid: %d\n", getpid());
+        run_scheduler();
     }
 
     return 0;
@@ -278,11 +286,7 @@ void process_generator_cleanup(int signum)
     // Free the array of pointers
     free(process_parameters);
 
-    // Remove message queue
-    if (msgid != -1)
-    {
-        msgctl(msgid, IPC_RMID, NULL);
-    }
+
     destroy_clk(0);
     printf("[PROC_GENERATOR] Resources cleaned up\n");
 

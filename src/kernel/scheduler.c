@@ -22,6 +22,7 @@ extern int quantum;
 
 void child_cleanup()
 {
+    printf("[SCHEDULER] CHILD_CLEANUP CALLED\n");
     signal(SIGCHLD, child_cleanup);
     if (running_process)
         free(running_process);
@@ -50,7 +51,7 @@ void run_scheduler()
         while ((crt_clk = get_clk()) == old_clk) usleep(1000);
         old_clk = crt_clk;
 
-        receive_processes(msgid);
+        receive_processes();
 
         // --------- Scheduling Algorithm Dispatch ---------
         if (scheduler_type == HPF) // HPF
@@ -58,22 +59,33 @@ void run_scheduler()
             running_process = hpf(min_heap_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
 
-            // Wait until the child reports that it finished
-            pid_t pid = running_process->pid;
-            printf("RUNNING PID %d", pid);
-            int status;
-            do
+            // Resume the process
+            kill(running_process->pid, SIGCONT);
+            printf("RUNNING PID %d\n", running_process->pid);
+
+            // Polling loop to check if process still exists
+            while (1)
             {
-                if ((pid = waitpid(pid, &status, WNOHANG)) == -1)
-                    perror("wait() error");
-                else
+                // Try sending signal 0 to process - this doesn't actually send a signal
+                // but checks if the process exists and we have permission to send signals
+                if (kill(running_process->pid, 0) < 0)
                 {
-                    if (WIFEXITED(status))
-                        printf("child exited with status of %d\n", WEXITSTATUS(status));
-                    else puts("child did not exit successfully");
+                    if (errno == ESRCH)
+                    {
+                        // Process no longer exists
+                        printf("Process %d has terminated\n", running_process->pid);
+                        break;
+                    }
                 }
+
+                usleep(1000); // 1ms
+
+                // Allow scheduler to receive messages during polling
+                receive_processes();
             }
-            while (pid == 0);
+
+            // Process is done
+            printf("child exited\n");
         }
         else if (scheduler_type == SRTN)
         {
@@ -115,8 +127,11 @@ void run_scheduler()
     }
 }
 
-void receive_processes(const int msgid)
+void receive_processes(void)
 {
+    if (msgid == -1)
+        return;
+
     PCB received_pcb;
     size_t recv_val = msgrcv(msgid, &received_pcb, sizeof(PCB), 1, IPC_NOWAIT);
 

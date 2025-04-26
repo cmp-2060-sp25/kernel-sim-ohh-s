@@ -9,7 +9,7 @@
 #include "clk.h"
 
 #define LOCK_FILE "/tmp/process.lock"
-short hasReceivedSIGSTOP = 0;
+pid_t process_generator_pid;
 
 void sigIntHandler(int signum)
 {
@@ -21,7 +21,6 @@ void sigIntHandler(int signum)
 
 void sigStpHandler(int signum)
 {
-    hasReceivedSIGSTOP = 1;
     printf("Process %d received SIGTSTP. Pausing...\n", getpid());
     pause();
     signal(SIGTSTP, sigStpHandler);
@@ -47,12 +46,12 @@ void run_process(int runtime)
             runtime -= (current_time - start_time); // Decrement runtime
             start_time = current_time; // Update start_time to current_time
         }
-
         printf("Process %d running. Remaining time: %d seconds.\n", getpid(), runtime);
         sleep(1);
     }
-    // Extra
-    kill(getpgrp(), SIGCHLD);
+
+    kill(process_generator_pid,SIGCHLD);
+    printf("Sending SIGCHILD to: %d\n", process_generator_pid);
     printf("Process %d finished execution.\n", getpid());
     destroy_clk(0);
 }
@@ -60,8 +59,8 @@ void run_process(int runtime)
 
 int main(int argc, char* argv[])
 {
-    signal(SIGINT, sigIntHandler);
     signal(SIGTSTP, sigStpHandler);
+    signal(SIGINT, sigIntHandler);
     signal(SIGCONT, sigContHandler);
 
     // Create a lock file to ensure only one instance is running
@@ -90,25 +89,29 @@ int main(int argc, char* argv[])
     signal(SIGTSTP, sigStpHandler);
     signal(SIGCONT, sigContHandler);
 
-    if (argc < 2)
+    if (argc < 3)
     {
-        fprintf(stderr, "Usage: %s <runtime>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <runtime> <process_generator_pid>\n", argv[0]);
         unlink(LOCK_FILE); // Remove the lock file
         close(lock_fd);
         return 1;
     }
 
     int runtime = atoi(argv[1]);
-    if (runtime <= 0)
+    process_generator_pid = atoi(argv[1]);
+
+    if (runtime <= 0 || process_generator_pid <= 0)
     {
-        fprintf(stderr, "Runtime must be a positive integer.\n");
+        if (runtime <= 0)
+            fprintf(stderr, "Runtime must be a positive integer.\n");
+        else
+            fprintf(stderr, "process_generator_pid must be a positive integer.\n");
         unlink(LOCK_FILE); // Remove the lock file
         close(lock_fd);
         return 1;
     }
 
     printf("Process %d started with runtime %d seconds.\n", getpid(), runtime);
-    while (!hasReceivedSIGSTOP);
     run_process(runtime);
 
     unlink(LOCK_FILE); // Remove the lock file when the process finishes
