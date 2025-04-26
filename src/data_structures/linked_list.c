@@ -8,7 +8,16 @@ void initList(linked_list* list, size_t dataSize) {
 
 void append(linked_list* list, void* item) {
     ListNode *newNode = (ListNode*)malloc(sizeof(ListNode));
+    if (!newNode) {
+        perror("Failed to allocate memory for new node");
+        exit(EXIT_FAILURE);
+    }
     newNode->data = malloc(list->dataSize);
+    if (!newNode->data) {
+        perror("Failed to allocate memory for node data");
+        free(newNode);
+        exit(EXIT_FAILURE);
+    }
     memcpy(newNode->data, item, list->dataSize);
     newNode->next = NULL;
 
@@ -48,9 +57,8 @@ void* getFront(linked_list* list) {
 }
 
 void clearList(linked_list* list) {
-    while (!isListEmpty(list))
-    {
-        void* data = getFront(list);
+    while (!isListEmpty(list)) {
+        void* data = removeFront(list);
         free(data);
     }
 }
