@@ -14,20 +14,66 @@ pid_t process_generator_pid;
 void sigIntHandler(int signum)
 {
     printf("Process %d received SIGINT. Terminating...\n", getpid());
-    unlink(LOCK_FILE);
+    // Check if the lock file contains the current process's PID
+    int lock_fd = open(LOCK_FILE, O_RDONLY);
+    if (lock_fd != -1) {
+        char pid_buffer[16];
+        ssize_t bytes_read = read(lock_fd, pid_buffer, sizeof(pid_buffer) - 1);
+        if (bytes_read > 0) {
+            pid_buffer[bytes_read] = '\0'; // Null-terminate the string
+            pid_t lock_pid = (pid_t)atoi(pid_buffer);
+            if (lock_pid == getpid()) {
+                unlink(LOCK_FILE); // Only unlink if the PID matches
+            }
+        }
+        close(lock_fd);
+    }
     destroy_clk(0);
     exit(0);
 }
 
 void sigStpHandler(int signum)
 {
-    printf("Process %d received SIGTSTP. Pausing...\n", getpid());
+    // Check if the lock file contains the current process's PID
+    int lock_fd = open(LOCK_FILE, O_RDONLY);
+    if (lock_fd != -1) {
+        char pid_buffer[16];
+        ssize_t bytes_read = read(lock_fd, pid_buffer, sizeof(pid_buffer) - 1);
+        if (bytes_read > 0) {
+            pid_buffer[bytes_read] = '\0'; // Null-terminate the string
+            pid_t lock_pid = (pid_t)atoi(pid_buffer);
+            if (lock_pid == getpid()) {
+                unlink(LOCK_FILE); // Only unlink if the PID matches
+                printf("Process %d received SIGTSTP. Pausing...\n", getpid()); 
+            }
+        }
+        close(lock_fd);
+    }
     pause();
     signal(SIGTSTP, sigStpHandler);
 }
 
 void sigContHandler(int signum)
 {
+    int lock_fd = open(LOCK_FILE, O_CREAT | O_EXCL | O_WRONLY, 0644);
+    if (lock_fd == -1) {
+        if (errno == EEXIST) {
+            fprintf(stderr, "Error: Another instance of the process is already running.\n");
+            kill(getpid(),SIGTSTP);
+            return;
+        } else {
+            perror("Error creating lock file");
+            kill(getpid(),SIGTSTP);
+            return;
+        }
+    }
+
+    // Write the current process's PID to the lock file
+    char pid_buffer[16];
+    snprintf(pid_buffer, sizeof(pid_buffer), "%d\n", getpid());
+    write(lock_fd, pid_buffer, strlen(pid_buffer));
+    close(lock_fd);
+
     printf("Process %d received SIGCONT. Resuming...\n", getpid());
     signal(SIGCONT, sigContHandler);
 }
@@ -65,7 +111,7 @@ int main(int argc, char* argv[])
     signal(SIGCONT, sigContHandler);
 
     // Create a lock file to ensure only one instance is running
-    int lock_fd = open(LOCK_FILE, O_CREAT | O_EXCL, 0644);
+    int lock_fd = open(LOCK_FILE, O_CREAT | O_EXCL | O_RDWR, 0644);
     if (lock_fd == -1)
     {
         if (errno == EEXIST)
