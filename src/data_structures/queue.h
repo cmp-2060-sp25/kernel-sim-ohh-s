@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdio.h>
 #include "linked_list.h"
 
 typedef struct {

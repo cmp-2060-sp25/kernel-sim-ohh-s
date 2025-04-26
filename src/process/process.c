@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include "clk.h"
+#include "colors.h"
 
 #define LOCK_FILE "/tmp/process.lock"
 pid_t process_generator_pid;
@@ -14,7 +15,7 @@ pid_t process_generator_pid;
 volatile sig_atomic_t is_running = 0;
 
 void sigIntHandler(int signum) {
-    printf("Process %d received SIGINT. Terminating...\n", getpid());
+    printf(ANSI_COLOR_YELLOW "[PROCESS] Process %d received SIGINT. Terminating...\n"ANSI_COLOR_WHITE, getpid());
     // Check if the lock file contains the current process's PID
     int lock_fd = open(LOCK_FILE, O_RDONLY);
     if (lock_fd != -1) {
@@ -44,7 +45,7 @@ void sigStpHandler(int signum) {
             pid_t lock_pid = (pid_t) atoi(pid_buffer);
             if (lock_pid == getpid()) {
                 unlink(LOCK_FILE); // Only unlink if the PID matches
-                printf("Process %d received SIGTSTP. Pausing...\n", getpid());
+                printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d received SIGTSTP. Pausing...\n"ANSI_COLOR_WHITE, getpid());
                 is_running = 0; // Set flag to not running
             }
         }
@@ -58,11 +59,11 @@ void sigContHandler(int signum) {
     int lock_fd = open(LOCK_FILE, O_CREAT | O_EXCL | O_WRONLY, 0644);
     if (lock_fd == -1) {
         if (errno == EEXIST) {
-            fprintf(stderr, "Error: Another instance of the process is already running.\n");
+            fprintf(stderr, "[PROCESS] Error: Another instance of the process is already running.\n");
             kill(getpid(), SIGTSTP);
             return;
         } else {
-            perror("Error creating lock file");
+            perror("[PROCESS] Error creating lock file");
             kill(getpid(), SIGTSTP);
             return;
         }
@@ -74,7 +75,7 @@ void sigContHandler(int signum) {
     write(lock_fd, pid_buffer, strlen(pid_buffer));
     close(lock_fd);
 
-    printf("Process %d received SIGCONT. Resuming...\n", getpid());
+    printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d received SIGCONT. Resuming...\n"ANSI_COLOR_WHITE, getpid());
     is_running = 1; // Set flag to running
     signal(SIGCONT, sigContHandler);
 }
@@ -98,7 +99,7 @@ void run_process(int runtime) {
                     int time_diff = current_time - chunk_start_time;
                     chunk_elapsed += time_diff;
                     chunk_start_time = current_time;
-                    printf("Process %d running. Chunk progress: %d/%d seconds.\n", getpid(), chunk_elapsed, 1);
+                    //printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d running. Chunk progress: %d/%d seconds.\n"ANSI_COLOR_WHITE, getpid(), chunk_elapsed, 1);
                 }
                 usleep(1000); // 1ms, check clock frequently but not too often
             }
@@ -106,7 +107,7 @@ void run_process(int runtime) {
             // If we completed the chunk (wasn't interrupted by signal)
             if (chunk_elapsed == 1) {
                 runtime -= 1;
-                printf("Process %d completed execution chunk. Remaining time: %d seconds.\n", getpid(), runtime);
+                printf(ANSI_COLOR_YELLOW"[PROCESS] Process Remaining time: %d seconds.\n"ANSI_COLOR_WHITE, runtime);
             }
         } else {
             // Not running, just wait until a signal changes our state
@@ -117,8 +118,8 @@ void run_process(int runtime) {
     if (runtime <= 0) {
         // Only send SIGCHLD if we actually completed the runtime
         kill(process_generator_pid, SIGCHLD);
-        printf("Sending SIGCHILD to: %d\n", process_generator_pid);
-        printf("Process %d finished execution.\n", getpid());
+        printf(ANSI_COLOR_YELLOW"[PROCESS] Sending SIGCHILD to: %d\n"ANSI_COLOR_WHITE, process_generator_pid);
+        printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished execution.\n"ANSI_COLOR_WHITE, getpid());
     }
 
     destroy_clk(0);
@@ -133,10 +134,10 @@ int main(int argc, char *argv[]) {
     int lock_fd = open(LOCK_FILE, O_CREAT | O_EXCL | O_RDWR, 0644);
     if (lock_fd == -1) {
         if (errno == EEXIST) {
-            fprintf(stderr, "Error: Another instance of the process is already running.\n");
+            fprintf(stderr, "[PROCESS] Error: Another instance of the process is already running.\n");
             return 1;
         } else {
-            perror("Error creating lock file");
+            perror("[PROCESS] Error creating lock file");
             return 1;
         }
     }
@@ -167,7 +168,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Process %d started with runtime %d seconds.\n", getpid(), runtime);
+    printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d started with runtime %d seconds.\n"ANSI_COLOR_WHITE, getpid(), runtime);
     run_process(runtime);
     unlink(LOCK_FILE); // Remove the lock file when the process finishes
     close(lock_fd);

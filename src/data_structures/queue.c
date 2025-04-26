@@ -14,7 +14,7 @@ void enqueue(Queue* q, void* item) {
 
 void* dequeue(Queue* q) {
     if (isQueueEmpty(q)) {
-        fprintf("Error: Attempt to dequeue from an empty queue\n");
+        fprintf(stderr, "Error: Attempt to dequeue from an empty queue\n");
         return NULL;
     }
     return removeFront(&q->list);

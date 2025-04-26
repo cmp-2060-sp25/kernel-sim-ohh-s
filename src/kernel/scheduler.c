@@ -10,6 +10,7 @@
 #include "queue.h"
 #include <sys/types.h>
 #include <sys/wait.h>
+#include "colors.h"
 
 #include "headers.h"
 
@@ -32,7 +33,7 @@ void run_scheduler()
 
     if (init_scheduler() == -1)
     {
-        fprintf(stderr, "Failed to initialize scheduler\n");
+        fprintf(stderr, ANSI_COLOR_GREEN"[SCHEDULER] Failed to initialize scheduler\n"ANSI_COLOR_RESET);
         return;
     }
 
@@ -47,7 +48,7 @@ void run_scheduler()
         int receive_status = receive_processes();
         if (receive_status == -2 && !process_count)
         {
-            printf("Message queue has been closed. Terminating scheduler.\n");
+            printf(ANSI_COLOR_GREEN"[SCHEDULER] Message queue has been closed. Terminating scheduler.\n"ANSI_COLOR_RESET);
             break; // Exit the scheduling loop
         }
 
@@ -59,7 +60,7 @@ void run_scheduler()
 
             // Resume the process
             kill(running_process->pid, SIGCONT);
-            printf("RUNNING PID %d\n", running_process->pid);
+            printf(ANSI_COLOR_GREEN"[SCHEDULER] RUNNING PID %d\n"ANSI_COLOR_RESET, running_process->pid);
 
             // Polling loop to check if process still exists
             pid_t rpid = running_process != NULL ? running_process->pid : -1;
@@ -72,7 +73,7 @@ void run_scheduler()
                     if (errno == ESRCH)
                     {
                         // Process no longer exists
-                        printf("Process %d has terminated\n", rpid);
+                        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d has terminated\n"ANSI_COLOR_RESET, rpid);
                         break;
                     }
                 }
@@ -120,7 +121,7 @@ void run_scheduler()
                             if (errno == ESRCH)
                             {
                                 // Process no longer exists
-                                // printf("Process %d has terminated\n", rpid);
+                                // printf("[SCHEDULER] Process %d has terminated\n", rpid);
                                 break;
                             }
                         }
@@ -134,7 +135,7 @@ void run_scheduler()
 
                 if (remaining_time > 0)
                 {
-                    printf("[SCHEDULER] SENDING SIGTSP TO %d\n", running_process->pid);
+                    printf(ANSI_COLOR_GREEN"[SCHEDULER] SENDING SIGTSP TO %d\n"ANSI_COLOR_RESET, running_process->pid);
                     kill(running_process->pid, SIGTSTP); // Pause the child for context switching
 
                     // Wait for the process to actually stop
@@ -188,7 +189,7 @@ void run_scheduler()
         }
         else
         {
-            fprintf(stderr, "Unknown scheduler_type: %d\n", scheduler_type);
+            fprintf(stderr, ANSI_COLOR_GREEN"[SCHEDULER] Unknown scheduler_type: %d\n"ANSI_COLOR_RESET, scheduler_type);
             exit(EXIT_FAILURE);
         }
     }
@@ -214,7 +215,7 @@ int receive_processes(void)
         {
             // EIDRM: Queue was removed
             // EINVAL: Invalid queue ID (queue no longer exists)
-            // printf("Message queue has been closed or removed\n");
+            // printf("[SCHEDULER] Message queue has been closed or removed\n");
             return -2; // Special return value to indicate queue closure
         }
         else
@@ -226,7 +227,7 @@ int receive_processes(void)
 
     while (recv_val != -1)
     {
-        printf("Received process ID: %d, arrival time: %d, remaining_time: %d at %d\n",
+        printf(ANSI_COLOR_GREEN"[SCHEDULER] Received process ID: %d, arrival time: %d, remaining_time: %d at %d\n"ANSI_COLOR_RESET,
                received_pcb.pid, received_pcb.arrival_time, received_pcb.remaining_time, get_clk());
 
         PCB* new_pcb = (PCB*)malloc(sizeof(PCB));
@@ -247,7 +248,7 @@ int receive_processes(void)
 
         if (recv_val == -1 && (errno == EIDRM || errno == EINVAL))
         {
-            printf("Message queue has been closed or removed during processing\n");
+            printf("[SCHEDULER] Message queue has been closed or removed during processing\n");
             return -2; // Queue was removed during processing
         }
     }
@@ -257,7 +258,7 @@ int receive_processes(void)
 
 void scheduler_cleanup(int signum)
 {
-    printf("[SCHEDULER] scheduler_cleanup CALLED\n");
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] scheduler_cleanup CALLED\n"ANSI_COLOR_RESET);
 
     if (log_file)
     {
@@ -317,7 +318,7 @@ void scheduler_cleanup(int signum)
         finished_process_info = NULL;
     }
 
-    printf("[SCHEDULER] scheduler_cleanup FINISHED \n");
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] scheduler_cleanup FINISHED \n"ANSI_COLOR_RESET);
 
     if (signum != 0)
     {
@@ -331,7 +332,7 @@ void child_cleanup()
 
     sync_clk();
     signal(SIGCHLD, child_cleanup);
-    printf("[SCHEDULER] CHILD_CLEANUP CALLED\n");
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] CHILD_CLEANUP CALLED\n"ANSI_COLOR_RESET);
 
     if (running_process)
     {
@@ -364,7 +365,7 @@ void child_cleanup()
         }
         else
         {
-            printf("WARNING: Exceeded maximum number of processes!\n");
+            printf(ANSI_COLOR_GREEN"[SCHEDULER] WARNING: Exceeded maximum number of processes!\n"ANSI_COLOR_RESET);
         }
 
         free(running_process);
@@ -372,9 +373,9 @@ void child_cleanup()
     }
     else
     {
-        printf("Requested to cleanup none????\n");
+        printf("[SCHEDULER] Requested to cleanup none????\n");
     }
-    printf("[SCHEDULER] CHILD_CLEANUP FINISHED\n");
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] CHILD_CLEANUP FINISHED\n"ANSI_COLOR_RESET);
 }
 
 int init_scheduler()
@@ -433,6 +434,6 @@ int init_scheduler()
     for (int i = 0; i < MAX_INPUT_PROCESSES; i++)
         finished_process_info[i] = NULL;
 
-    printf("Scheduler initialized successfully at time %d\n", current_time);
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] Scheduler initialized successfully at time %d\n"ANSI_COLOR_RESET, current_time);
     return 0;
 }

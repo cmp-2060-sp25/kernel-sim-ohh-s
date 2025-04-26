@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include "clk.h"
+#include "colors.h"
 
 #define SHKEY 300
 ///==============================
@@ -23,13 +24,13 @@ int shmid;
 void _cleanup(__attribute__((unused)) int signum)
 {
     shmctl(shmid, IPC_RMID, NULL);
-    printf("Clock terminating!\n");
+    printf(ANSI_COLOR_CYAN"[CLOCK] Clock terminating!\n"ANSI_COLOR_RESET);
     exit(0);
 }
 
 void init_clk()
 {
-    printf("Clock starting\n");
+    printf(ANSI_COLOR_CYAN"[CLOCK] Clock starting\n"ANSI_COLOR_RESET);
     signal(SIGINT, _cleanup);
     int clk = 0;
     // Create shared memory for one integer variable 4 bytes
@@ -52,7 +53,7 @@ void run_clk()
 {
     while (1)
     {
-        printf("current time is %d\n", (*shmaddr));
+        printf(ANSI_COLOR_CYAN"[CLOCK] current time is %d\n"ANSI_COLOR_RESET, (*shmaddr));
         sleep(1);
         (*shmaddr)++;
     }
@@ -75,7 +76,7 @@ void sync_clk()
     while ((int)shmidLocal == -1)
     {
         // Make sure that the clock exists
-        printf("Wait! The clock not initialized yet!\n");
+        printf(ANSI_COLOR_CYAN"[CLOCK] Wait! The clock not initialized yet!\n"ANSI_COLOR_RESET);
         sleep(1);
         shmidLocal = shmget(SHKEY, 4, 0444);
     }

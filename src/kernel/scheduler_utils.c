@@ -10,6 +10,7 @@
 #include "headers.h"
 #include "min_heap.h"
 #include "process_generator.h"
+#include "colors.h"
 extern int scheduler_type;
 extern finishedProcessInfo** finished_process_info;
 extern int finished_processes_count;
@@ -194,7 +195,7 @@ void generate_statistics()
         // Check if the pointer is valid
         if (finished_process_info[i] == NULL)
         {
-            fprintf(stderr, "Error: finished_process_info[%d] is NULL\n", i);
+            fprintf(stderr, "[SCHEDULER] Error: finished_process_info[%d] is NULL\n", i);
             continue; // Skip this iteration
         }
 
@@ -206,7 +207,7 @@ void generate_statistics()
         wta_values[i] = (float*)malloc(sizeof(float));
         if (!wta_values[i])
         {
-            fprintf(stderr, "Failed to allocate memory for wta_values[%d]\n", i);
+            fprintf(stderr, "[SCHEDULER] Failed to allocate memory for wta_values[%d]\n", i);
             continue;
         }
         *wta_values[i] = finished_process_info[i]->wta;
