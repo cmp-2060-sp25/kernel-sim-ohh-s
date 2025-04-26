@@ -6,9 +6,10 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
-#include "kernel/clk.h"
+#include "clk.h"
 
 #define LOCK_FILE "/tmp/process.lock"
+short hasReceivedSIGSTOP = 0;
 
 void sigIntHandler(int signum)
 {
@@ -20,6 +21,7 @@ void sigIntHandler(int signum)
 
 void sigStpHandler(int signum)
 {
+    hasReceivedSIGSTOP = 1;
     printf("Process %d received SIGTSTP. Pausing...\n", getpid());
     pause();
     signal(SIGTSTP, sigStpHandler);
@@ -49,7 +51,8 @@ void run_process(int runtime)
         printf("Process %d running. Remaining time: %d seconds.\n", getpid(), runtime);
         sleep(1);
     }
-    kill(getppid(), SIGCHLD);
+    // Extra
+    kill(getpgrp(), SIGCHLD);
     printf("Process %d finished execution.\n", getpid());
     destroy_clk(0);
 }
@@ -105,6 +108,7 @@ int main(int argc, char* argv[])
     }
 
     printf("Process %d started with runtime %d seconds.\n", getpid(), runtime);
+    while (!hasReceivedSIGSTOP);
     run_process(runtime);
 
     unlink(LOCK_FILE); // Remove the lock file when the process finishes

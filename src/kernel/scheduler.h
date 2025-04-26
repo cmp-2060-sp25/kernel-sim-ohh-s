@@ -20,4 +20,3 @@ extern PCB* running_process;
 extern min_heap_t* ready_queue;
 extern int msg_queue_id;
 extern FILE* log_file;
-extern PCB** finished_processes;

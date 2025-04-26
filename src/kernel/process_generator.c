@@ -8,13 +8,13 @@
 #include "clk.h"
 #include "headers.h"
 #include "process_generator.h"
-
 #include <string.h>
-
 #include "scheduler.h"
 int scheduler_type = -1; // Default invalid value
 char* process_file = "processes.txt"; // Default filename
 int quantum = 2; // Default quantum value
+processParameters** process_parameters;
+int msgid;
 
 int main(int argc, char* argv[])
 {
@@ -87,89 +87,96 @@ int main(int argc, char* argv[])
      * Parent -> runs the clk
      */
     pid_t clk_pid = fork();
-
+    // Child b
+    // Child -> Fork processes and sends their pcb to the scheduler at the appropriate time
     if (clk_pid == 0)
     {
-        signal(SIGINT, process_generator_cleanup);
-        sync_clk();
-
-        int remaining_processes = process_count;
-        int crt_clk = get_clk();
-        int old_clk = -1;
-        while (remaining_processes > 0)
+        // Child -> run_scheduler
+        pid_t scheduler_pid = fork();
+        if (scheduler_pid == 0)
         {
-            // Ensure that we move by increments of 1
-            while ((crt_clk = get_clk()) - old_clk == 0)
-                usleep(1); // 1us sleep;
-            old_clk = crt_clk;
+            signal(SIGINT, process_generator_cleanup);
+            sync_clk();
 
-            printf("current time is %d\n", crt_clk);
-
-            int messages_sent = 0;
-            // Check the process_parameters[] for processes whose arrival time == crt_clk, and fork/send them
-            for (int i = 0; i < process_count; i++)
+            int remaining_processes = process_count;
+            int crt_clk = get_clk();
+            int old_clk = -1;
+            while (remaining_processes > 0)
             {
-                if (process_parameters[i] != NULL && process_parameters[i]->arrival_time == crt_clk)
+                // 0 1 2 3 4
+                // Ensure that we move by increments of 1
+                while ((crt_clk = get_clk()) - old_clk == 0)
+                    usleep(1); // 1us sleep;
+                old_clk = crt_clk;
+
+                printf("current time is %d\n", crt_clk);
+
+                int messages_sent = 0;
+                // Check the process_parameters[] for processes whose arrival time == crt_clk, and fork/send them
+                for (int i = 0; i < process_count; i++)
                 {
-                    // Fork the process at its arrival time
-                    pid_t pid = fork();
-                    if (pid == 0)
+                    if (process_parameters[i] != NULL && process_parameters[i]->arrival_time == crt_clk)
                     {
-                        char runtime_str[16];
-                        snprintf(runtime_str, sizeof(runtime_str), "%d", process_parameters[i]->runtime);
-                        execl("./process", "process", runtime_str, (char*)NULL);
-                        perror("execl failed");
-                        exit(1);
-                    }
-                    else if (pid > 0)
-                    {
-                        process_parameters[i]->process_id = pid;
-                        kill(pid, SIGTSTP); // Immediately stop the child process
-                    }
-                    else
-                    {
-                        perror("fork failed");
-                    }
+                        // Fork the process at its arrival time
+                        pid_t pid = fork();
+                        if (pid == 0)
+                        {
+                            char runtime_str[16];
+                            snprintf(runtime_str, sizeof(runtime_str), "%d", process_parameters[i]->runtime);
+                            execl("./process", "process", runtime_str, (char*)NULL);
+                            perror("execl failed");
+                            exit(1);
+                        }
+                        else if (pid > 0)
+                        {
+                            process_parameters[i]->pid = pid;
+                            kill(pid, SIGTSTP); // Immediately stop the child process
+                        }
+                        else
+                        {
+                            perror("fork failed");
+                        }
 
-                    messages_sent++;
-                    PCB proc_pcb = {
-                        1, process_count - remaining_processes, process_parameters[i]->process_id,
-                        process_parameters[i]->arrival_time, 0,
-                        process_parameters[i]->runtime, process_parameters[i]->priority, 0, crt_clk, -1, -1, -1, -1, -1,
-                        READY,
-                    };
-                    // Send the message
-                    if (msgsnd(msgid, &proc_pcb, sizeof(PCB), 0) == -1)
-                    {
-                        perror("Error sending message");
-                    }
+                        messages_sent++;
+                        PCB proc_pcb = {
+                            1, process_parameters[i]->id, process_parameters[i]->pid,
+                            process_parameters[i]->arrival_time, 0,
+                            process_parameters[i]->runtime, process_parameters[i]->priority, 0, crt_clk, -1, -1, -1, -1,
+                            -1,
+                            READY,
+                        };
+                        // Send the message
+                        if (msgsnd(msgid, &proc_pcb, sizeof(PCB), 0) == -1)
+                        {
+                            perror("Error sending message");
+                        }
 
-                    // Cleanup
-                    free(process_parameters[i]);
-                    process_parameters[i] = NULL;
-                    remaining_processes--;
+                        // Cleanup
+                        free(process_parameters[i]);
+                        process_parameters[i] = NULL;
+                        remaining_processes--;
+                    }
+                    else if (process_parameters[i] != NULL && process_parameters[i]->arrival_time > crt_clk)
+                        break;
                 }
+
+                if (messages_sent > 0)
+                    printf("Sent %d message(s) to scheduler\n", messages_sent);
             }
 
-            if (messages_sent > 0)
-                printf("Sent %d message(s) to scheduler\n", messages_sent);
+            printf("All processes have been sent, exiting...\n");
+            process_generator_cleanup(0);
+            exit(0);
         }
-
-        printf("All processes have been sent, exiting...\n");
-        process_generator_cleanup(0);
-        exit(0);
+        else
+            run_scheduler();
     }
     else
     {
-        pid_t scheduler_pid = fork();
-        if (scheduler_pid == 0)
-            run_scheduler(scheduler_type); // Pass scheduler type as an integer
-        else
-        {
-            init_clk();
-            sync_clk();
-            run_clk();
-        }
+        // Parent
+        init_clk();
+        sync_clk();
+        run_clk();
     }
 
     return 0;
@@ -238,7 +245,7 @@ processParameters** read_process_file(const char* filename, int* count)
 
             // Set values
             process_messages[index]->mtype = 1; // Default message type
-            process_messages[index]->process_id = id;
+            process_messages[index]->id = id;
             process_messages[index]->arrival_time = arrival;
             process_messages[index]->runtime = runtime;
             process_messages[index]->priority = priority;
@@ -276,7 +283,7 @@ void process_generator_cleanup(int signum)
     {
         msgctl(msgid, IPC_RMID, NULL);
     }
-    destroy_clk(1);
+    destroy_clk(0);
     printf("[PROC_GENERATOR] Resources cleaned up\n");
 
     if (signum != 0)

@@ -8,7 +8,10 @@
 #include "scheduler_utils.h"
 #include "min_heap.h"
 #include "queue.h"
+#include <sys/types.h>
+#include <sys/wait.h>
 
+#include "headers.h"
 // Use pointers for both possible queue types
 min_heap_t* min_heap_queue = NULL;
 Queue* rr_queue = NULL;
@@ -20,6 +23,11 @@ extern int quantum;
 void child_cleanup()
 {
     signal(SIGCHLD, child_cleanup);
+    if (running_process)
+        free(running_process);
+    else
+        printf("Requested to cleanup none????");
+    running_process = NULL;
 }
 
 void run_scheduler()
@@ -39,17 +47,66 @@ void run_scheduler()
 
     while (1)
     {
-        while ((crt_clk = get_clk()) == old_clk) usleep(10000);
+        while ((crt_clk = get_clk()) == old_clk) usleep(1000);
         old_clk = crt_clk;
+
         receive_processes(msgid);
 
         // --------- Scheduling Algorithm Dispatch ---------
-        if (scheduler_type == 1) // HPF
-            running_process = hpf(min_heap_queue, running_process, crt_clk);
-        else if (scheduler_type == 2) // SRTN
+        if (scheduler_type == HPF) // HPF
+        {
+            running_process = hpf(min_heap_queue, crt_clk);
+            if (running_process == NULL) continue; // there is no process to run
+
+            // Wait until the child reports that it finished
+            pid_t pid = running_process->pid;
+            printf("RUNNING PID %d", pid);
+            int status;
+            do
+            {
+                if ((pid = waitpid(pid, &status, WNOHANG)) == -1)
+                    perror("wait() error");
+                else
+                {
+                    if (WIFEXITED(status))
+                        printf("child exited with status of %d\n", WEXITSTATUS(status));
+                    else puts("child did not exit successfully");
+                }
+            }
+            while (pid == 0);
+        }
+        else if (scheduler_type == SRTN)
+        {
             running_process = srtn(min_heap_queue, crt_clk);
-        else if (scheduler_type == 0) // RR
-            running_process = rr(rr_queue, running_process, crt_clk, quantum);
+            if (running_process == NULL) continue; // there is no process to run
+
+            kill(running_process->pid,SIGCONT);
+            int crt_time = get_clk();
+            int old_time = crt_time;
+            while ((crt_time = get_clk()) == old_time); // busy wait the scheduler for a clk
+            kill(running_process->pid,SIGSTOP); // Pause the child for context switching
+            running_process->status = READY;
+            running_process->remaining_time -= crt_time - old_time;
+            running_process->last_run_time = crt_time;
+            if (running_process->remaining_time)
+                min_heap_insert(min_heap_queue, running_process);
+        }
+        else if (scheduler_type == RR)
+        {
+            running_process = rr(rr_queue, crt_clk);
+            if (running_process == NULL) continue; // there is no process to run
+            kill(running_process->pid,SIGCONT);
+            int crt_time = get_clk();
+            int old_time = crt_time;
+            while ((crt_time = get_clk()) == old_time); // busy wait the scheduler for a clk
+            kill(running_process->pid,SIGSTOP); // Pause the child for context switching
+            running_process->status = READY;
+            running_process->remaining_time -= crt_time - old_time;
+            running_process->last_run_time = crt_time;
+            if (running_process->remaining_time)
+                enqueue(rr_queue, running_process);
+        }
+
         else
         {
             fprintf(stderr, "Unknown scheduler_type: %d\n", scheduler_type);
@@ -81,12 +138,12 @@ void receive_processes(const int msgid)
             perror("Failed to allocate memory for PCB");
             break;
         }
-        *new_pcb = received_pcb;
+        *new_pcb = received_pcb; // shallow copy, doesnt matter
 
-        if (scheduler_type == 1 || scheduler_type == 2)
+        if (scheduler_type == HPF || scheduler_type == SRTN)
             min_heap_insert(min_heap_queue, new_pcb);
-        else if (scheduler_type == 0)
-            enqueue(rr_queue, new_pcb); 
+        else if (scheduler_type == RR)
+            enqueue(rr_queue, new_pcb);
 
         process_count++;
         recv_val = msgrcv(msgid, &received_pcb, sizeof(PCB) - sizeof(long), 1, IPC_NOWAIT);
@@ -120,19 +177,18 @@ int init_scheduler()
 {
     int current_time = get_clk();
     process_count = 0;
-    completed_process_count = 0;
     running_process = NULL;
 
-    if (scheduler_type == 1 || scheduler_type == 2)
+    if (scheduler_type == HPF || scheduler_type == SRTN)
     {
-        min_heap_queue = create_min_heap(100, compare_processes);
+        min_heap_queue = create_min_heap(MAX_INPUT_PROCESSES, compare_processes);
         if (min_heap_queue == NULL)
         {
             perror("Failed to create min_heap_queue");
             return -1;
         }
     }
-    else if (scheduler_type == 0)
+    else if (scheduler_type == RR)
     {
         rr_queue = (Queue*)malloc(sizeof(Queue));
         if (rr_queue == NULL)
@@ -141,36 +197,25 @@ int init_scheduler()
             return -1;
         }
         initQueue(rr_queue, sizeof(PCB*));
-        // }
-
-        // Initialize process_count if not done elsewhere
-        process_count = 0;
-
-        // Init IPC
-        key_t key = ftok("process_generator", 65);
-        msgid = msgget(key, 0666 | IPC_CREAT);
-        if (msgid == -1)
-        {
-            perror("Error getting message queue");
-            return -1;
-        }
-
-        log_file = fopen("scheduler.log", "w");
-        if (log_file == NULL)
-        {
-            perror("Failed to open log file");
-            return -1;
-        }
-        fprintf(log_file, "#At\ttime\tx\tprocess\ty\tstate\tarr\tw\ttotal\tz\tremain\ty\twait\tk\n");
-        finished_processes = malloc(100 * sizeof(PCB*));
-        if (finished_processes == NULL)
-        {
-            perror("Failed to allocate memory for finished processes");
-            fclose(log_file);
-            return -1;
-        }
-
-        printf("Scheduler initialized successfully at time %d\n", current_time);
-        return 0;
     }
+
+    // Init IPC
+    key_t key = ftok("process_generator", 65);
+    msgid = msgget(key, 0666 | IPC_CREAT);
+    if (msgid == -1)
+    {
+        perror("Error getting message queue");
+        return -1;
+    }
+
+    log_file = fopen("scheduler.log", "w");
+    if (log_file == NULL)
+    {
+        perror("Failed to open log file");
+        return -1;
+    }
+    fprintf(log_file, "#At\ttime\tx\tprocess\ty\tstate\tarr\tw\ttotal\tz\tremain\ty\twait\tk\n");
+
+    printf("Scheduler initialized successfully at time %d\n", current_time);
+    return 0;
 }

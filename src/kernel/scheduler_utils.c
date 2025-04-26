@@ -1,45 +1,58 @@
 #include <math.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ipc.h>
+#include <bits/signum-arch.h>
 #include "clk.h"
 #include "pcb.h"
 #include "queue.h"
 #include "scheduler.h"
 #include "headers.h"
 #include "min_heap.h"
+#include "process_generator.h"
+extern int scheduler_type;
 
-// compare function for periorty queue
+// compare function for priority queue
 int compare_processes(const void* p1, const void* p2)
 {
     PCB* process1 = (PCB*)p1;
     PCB* process2 = (PCB*)p2;
-
-
-    if (process1->priority != process2->priority)
+    if (scheduler_type == HPF)
     {
-        return process1->priority - process2->priority;
-    }
+        if (process1->priority != process2->priority)
+        {
+            return process1->priority - process2->priority;
+        }
 
-    // If priorities are equal return that come first
-    return process1->arrival_time - process2->arrival_time;
+        // If priorities are equal return that come first
+        return process1->arrival_time - process2->arrival_time;
+    }
+    else // SRTN
+    {
+        if (process1->remaining_time != process2->remaining_time)
+        {
+            return process1->remaining_time - process2->remaining_time;
+        }
+
+        // If priorities are equal return that come first
+        return process1->arrival_time - process2->arrival_time;
+    }
 }
 
 // HPF algorithm
-PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time)
+PCB* hpf(min_heap_t* ready_queue, int current_time)
 {
-    if (running_process && running_process->remaining_time <= 0)
-    {
-        running_process->status = TERMINATED;
-        running_process->finish_time = current_time;
-        running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) - running_process
-            ->runtime;
-        log_process_state(running_process, "finished", current_time);
-        running_process = NULL;
-    }
-    if (!running_process && !min_heap_is_empty(ready_queue))
+    if (!min_heap_is_empty(ready_queue))
     {
         PCB* next_process = min_heap_extract_min(ready_queue);
+        while (next_process->remaining_time == 0)
+        {
+            log_process_state(next_process, "started", current_time);
+            log_process_state(next_process, "finished", current_time);
+            if (min_heap_is_empty(ready_queue))
+                return NULL;
+            next_process = min_heap_extract_min(ready_queue);
+        }
         next_process->status = RUNNING;
         next_process->waiting_time = current_time - next_process->arrival_time;
         // assuming that any process is initially having start time -1
@@ -48,7 +61,7 @@ PCB* hpf(min_heap_t* ready_queue, PCB* running_process, int current_time)
             next_process->start_time = current_time;
         }
         log_process_state(next_process, "started", current_time);
-        // TODO call function to run the process in process.c
+        kill(next_process->pid,SIGCONT);
         return next_process;
     }
     return NULL;
@@ -69,15 +82,12 @@ PCB* srtn(min_heap_t* ready_queue, int current_time)
         // assuming that any process is initially having start time -1
         if (next_process->start_time == -1)
         {
+            log_process_state(next_process, "started", current_time);
             next_process->start_time = current_time;
             next_process->response_time = next_process->start_time - next_process->arrival_time;
         }
-        log_process_state(next_process, "started", current_time);
-        // TODO call function to run the process in process.c
-
-
-        next_process->remaining_time--;
-        next_process->last_run_time = get_clk();
+        else
+            log_process_state(next_process, "resumed", current_time);
         return next_process;
     }
     return NULL;
@@ -85,7 +95,7 @@ PCB* srtn(min_heap_t* ready_queue, int current_time)
 
 
 // RR algorithm
-PCB* rr(Queue* ready_queue, PCB* running_process, int current_time, int quantum)
+PCB* rr(Queue* ready_queue, int current_time)
 {
     static int time_slice = 0; // Tracks the time slice for the current process
 
@@ -119,10 +129,11 @@ PCB* rr(Queue* ready_queue, PCB* running_process, int current_time, int quantum)
         // If the process is starting for the first time
         if (running_process->start_time == -1)
         {
+            log_process_state(running_process, "started", current_time);
             running_process->start_time = current_time;
         }
-
-        log_process_state(running_process, "started", current_time);
+        else
+            log_process_state(running_process, "resumed", current_time);
         time_slice = 0; // Reset the time slice for the new process
     }
 
@@ -180,14 +191,14 @@ void generate_statistics()
 
     for (int i = 0; i < process_count; i++)
     {
-        PCB* process = finished_processes[i];
-        int ta = process->finish_time - process->arrival_time;
-        float wta = (float)ta / process->runtime;
-
-        total_wait += process->waiting_time;
-        total_ta += ta;
-        total_wta += wta;
-        wta_values[i] = wta;
+        // PCB* process = finished_processes[i];
+        // int ta = process->finish_time - process->arrival_time;
+        // float wta = (float)ta / process->runtime;
+        //
+        // total_wait += process->waiting_time;
+        // total_ta += ta;
+        // total_wta += wta;
+        // wta_values[i] = wta;
     }
 
     float avg_wait = total_wait / process_count;

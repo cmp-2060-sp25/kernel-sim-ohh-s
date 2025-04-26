@@ -4,7 +4,8 @@
 typedef struct
 {
     long mtype;
-    int process_id;
+    int id;
+    int pid;
     int arrival_time;
     int runtime;
     int priority;
