@@ -14,7 +14,7 @@
 #define SHKEY 300
 ///==============================
 // don't mess with this variable//
-int *shmaddr = NULL; //
+int* shmaddr = NULL; //
 //===============================
 
 int shmid;
@@ -39,7 +39,7 @@ void init_clk()
         perror("Error in creating shm!");
         exit(-1);
     }
-    int *shmaddr = (int *)shmat(shmid, (void *)0, 0);
+    int* shmaddr = (int*)shmat(shmid, (void*)0, 0);
     if ((long)shmaddr == -1)
     {
         perror("Error in attaching the shm in clock!");
@@ -59,20 +59,26 @@ void run_clk()
 
 int get_clk()
 {
-    return *shmaddr;
+    if (shmaddr == NULL)
+    {
+        perror("SHMADDR IS BEING ACCESSED ALTHOUGH NULL");
+        return -1;
+    }
+    else
+        return *shmaddr;
 }
 
 void sync_clk()
 {
-    int shmid = shmget(SHKEY, 4, 0444);
-    while ((int)shmid == -1)
+    int shmidLocal = shmget(SHKEY, 4, 0444);
+    while ((int)shmidLocal == -1)
     {
         // Make sure that the clock exists
         printf("Wait! The clock not initialized yet!\n");
         sleep(1);
-        shmid = shmget(SHKEY, 4, 0444);
+        shmidLocal = shmget(SHKEY, 4, 0444);
     }
-    shmaddr = (int *)shmat(shmid, (void *)0, 0);
+    shmaddr = (int*)shmat(shmidLocal, (void*)0, 0);
 }
 
 void destroy_clk(short terminateAll)
