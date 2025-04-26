@@ -150,7 +150,7 @@ void run_scheduler()
                     }
 
                     running_process->status = READY;
-                    running_process->remaining_time -= crt_time - old_time;
+                    running_process->remaining_time = remaining_time;
                     running_process->last_run_time = crt_time;
                     min_heap_insert(min_heap_queue, running_process);
                     running_process = NULL;

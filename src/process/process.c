@@ -11,6 +11,8 @@
 #define LOCK_FILE "/tmp/process.lock"
 pid_t process_generator_pid;
 
+volatile sig_atomic_t is_running = 0;
+
 void sigIntHandler(int signum)
 {
     printf("Process %d received SIGINT. Terminating...\n", getpid());
@@ -51,6 +53,7 @@ void sigStpHandler(int signum)
             {
                 unlink(LOCK_FILE); // Only unlink if the PID matches
                 printf("Process %d received SIGTSTP. Pausing...\n", getpid());
+                is_running = 0; // Set flag to not running
             }
         }
         close(lock_fd);
@@ -67,13 +70,13 @@ void sigContHandler(int signum)
         if (errno == EEXIST)
         {
             fprintf(stderr, "Error: Another instance of the process is already running.\n");
-            kill(getpid(),SIGTSTP);
+            kill(getpid(), SIGTSTP);
             return;
         }
         else
         {
             perror("Error creating lock file");
-            kill(getpid(),SIGTSTP);
+            kill(getpid(), SIGTSTP);
             return;
         }
     }
@@ -85,30 +88,65 @@ void sigContHandler(int signum)
     close(lock_fd);
 
     printf("Process %d received SIGCONT. Resuming...\n", getpid());
+    is_running = 1; // Set flag to running
     signal(SIGCONT, sigContHandler);
 }
 
 void run_process(int runtime)
 {
     sync_clk();
-    int start_time = get_clk(); // Get the current clock time
-    int current_time = start_time; // Get the updated clock time
+    int current_time = get_clk();
+    int start_time = 0;
+
+    is_running = 1; // Initial state is running
 
     while (runtime > 0)
     {
-        while ((start_time = get_clk()) == current_time)
-            usleep(1000); // 10us
-        runtime -= (start_time - current_time); // Decrement runtime
-        current_time = start_time;
-        printf("Process %d running. Remaining time: %d seconds.\n", getpid(), runtime);
+        if (is_running)
+        {
+            start_time = get_clk();
+            int chunk_start_time = start_time;
+            int chunk_elapsed = 0;
+
+            while (chunk_elapsed < 1 && is_running)
+            {
+                current_time = get_clk();
+                if (current_time != chunk_start_time)
+                {
+                    int time_diff = current_time - chunk_start_time;
+                    chunk_elapsed += time_diff;
+                    chunk_start_time = current_time;
+                    printf("Process %d running. Chunk progress: %d/%d seconds.\n",
+                           getpid(), chunk_elapsed, 1);
+                }
+                usleep(1000); // 1ms, check clock frequently but not too often
+            }
+
+            // If we completed the chunk (wasn't interrupted by signal)
+            if (chunk_elapsed == 1)
+            {
+                runtime -= 1;
+                printf("Process %d completed execution chunk. Remaining time: %d seconds.\n",
+                       getpid(), runtime);
+            }
+        }
+        else
+        {
+            // Not running, just wait until a signal changes our state
+            usleep(1000); // 1ms pause to avoid busy waiting
+        }
     }
 
-    kill(process_generator_pid,SIGCHLD);
-    printf("Sending SIGCHILD to: %d\n", process_generator_pid);
-    printf("Process %d finished execution.\n", getpid());
+    if (runtime <= 0)
+    {
+        // Only send SIGCHLD if we actually completed the runtime
+        kill(process_generator_pid, SIGCHLD);
+        printf("Sending SIGCHILD to: %d\n", process_generator_pid);
+        printf("Process %d finished execution.\n", getpid());
+    }
+
     destroy_clk(0);
 }
-
 
 int main(int argc, char* argv[])
 {

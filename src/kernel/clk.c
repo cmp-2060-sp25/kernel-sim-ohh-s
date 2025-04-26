@@ -52,6 +52,7 @@ void run_clk()
 {
     while (1)
     {
+        printf("current time is %d\n", (*shmaddr));
         sleep(1);
         (*shmaddr)++;
     }

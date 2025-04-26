@@ -114,8 +114,6 @@ int main(int argc, char* argv[])
                     usleep(1); // 1us sleep;
                 old_clk = crt_clk;
 
-                printf("current time is %d\n", crt_clk);
-
                 int messages_sent = 0;
                 // Check the process_parameters[] for processes whose arrival time == crt_clk, and fork/send them
                 for (int i = 0; i < process_count; i++)
