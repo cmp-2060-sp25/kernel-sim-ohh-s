@@ -97,55 +97,37 @@ PCB* srtn(min_heap_t* ready_queue, int current_time)
 // RR algorithm
 PCB* rr(Queue* ready_queue, int current_time)
 {
-    static int time_slice = 0; // Tracks the time slice for the current process
-
-    if (running_process && running_process->remaining_time <= 0)
-    {
-        running_process->status = TERMINATED;
-        running_process->finish_time = current_time;
-        running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) - running_process
-            ->runtime;
-        log_process_state(running_process, "finished", current_time);
-        running_process = NULL;
-        time_slice = 0; // Reset the time slice
-    }
-
-    // If the time slice for the running process has expired
-    if (running_process && time_slice >= quantum)
-    {
-        running_process->status = READY;
-        enqueue(ready_queue, running_process); // Re-enqueue the process
-        log_process_state(running_process, "resumed", current_time);
-        running_process = NULL;
-        time_slice = 0; // Reset the time slice
-    }
-
-    // If no process is currently running and the ready queue is not empty
-    if (!running_process && !isQueueEmpty(ready_queue))
-    {
-        running_process = dequeue(ready_queue);
-        running_process->status = RUNNING;
-
-        // If the process is starting for the first time
-        if (running_process->start_time == -1)
+    if(!isQueueEmpty(ready_queue)) {
+        PCB* next_process = dequeue(ready_queue);
+        while (next_process->remaining_time == 0)
         {
-            log_process_state(running_process, "started", current_time);
-            running_process->start_time = current_time;
+            next_process->status = TERMINATED;
+            next_process->finish_time = current_time;
+            next_process->waiting_time = (next_process->finish_time - next_process->arrival_time) - next_process->runtime;
+            next_process->turnaround_time = next_process->finish_time - next_process->arrival_time;
+            next_process->weighted_turnaround = (float)next_process->turnaround_time / next_process->runtime;
+            log_process_state(next_process, "finished", current_time);
+            if (isQueueEmpty(ready_queue))
+                return NULL;
+            next_process = dequeue(ready_queue);
+        }
+        next_process->status = RUNNING;
+        next_process->waiting_time = (current_time - next_process->arrival_time) - (next_process->runtime - next_process->remaining_time);
+        if (next_process->start_time == -1)
+        {
+            next_process->start_time = current_time;
+            next_process->response_time = current_time - next_process->arrival_time;
+            log_process_state(next_process, "started", current_time);
         }
         else
-            log_process_state(running_process, "resumed", current_time);
-        time_slice = 0; // Reset the time slice for the new process
-    }
+        {
+            log_process_state(next_process, "resumed", current_time);
+        }
 
-    // Increment the time slice for the running process
-    if (running_process)
-    {
-        time_slice++;
+        return next_process;
     }
-
-    return running_process;
+    return NULL;
 }
-
 
 // Log process state changes
 void log_process_state(PCB* process, char* state, int time)

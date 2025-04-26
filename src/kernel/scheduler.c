@@ -109,14 +109,25 @@ void run_scheduler()
             if (running_process == NULL) continue; // there is no process to run
             kill(running_process->pid,SIGCONT);
             int crt_time = get_clk();
-            int old_time = crt_time;
-            while ((crt_time = get_clk()) == old_time); // busy wait the scheduler for a clk
+            int time_to_run = (running_process->remaining_time < quantum) 
+                ? running_process->remaining_time 
+                : quantum;
+            int end_time = crt_time + time_to_run;
+            while ((crt_time = get_clk()) < end_time); // busy wait the scheduler for a quantum
             kill(running_process->pid,SIGSTOP); // Pause the child for context switching
             running_process->status = READY;
-            running_process->remaining_time -= crt_time - old_time;
+            running_process->remaining_time -= time_to_run;
             running_process->last_run_time = crt_time;
             if (running_process->remaining_time)
                 enqueue(rr_queue, running_process);
+            else {
+                running_process->status = TERMINATED;
+                running_process->finish_time = crt_time;
+                running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) - running_process->runtime;
+                running_process->turnaround_time = running_process->finish_time - running_process->arrival_time;
+                running_process->weighted_turnaround = (float)running_process->turnaround_time / running_process->runtime;
+                log_process_state(running_process, "finished", current_time);
+            }
         }
 
         else
