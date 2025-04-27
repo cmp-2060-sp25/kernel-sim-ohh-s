@@ -10,9 +10,9 @@
 #include "queue.h"
 #include <sys/types.h>
 #include <sys/wait.h>
-#include "colors.h"
 
 #include "headers.h"
+#include "colors.h"
 
 extern finishedProcessInfo** finished_process_info;
 // Use pointers for both possible queue types
@@ -48,7 +48,8 @@ void run_scheduler()
         int receive_status = receive_processes();
         if (receive_status == -2 && !process_count)
         {
-            printf(ANSI_COLOR_GREEN"[SCHEDULER] Message queue has been closed. Terminating scheduler.\n"ANSI_COLOR_RESET);
+            printf(
+                ANSI_COLOR_GREEN"[SCHEDULER] Message queue has been closed. Terminating scheduler.\n"ANSI_COLOR_RESET);
             break; // Exit the scheduling loop
         }
 
@@ -227,8 +228,10 @@ int receive_processes(void)
 
     while (recv_val != -1)
     {
-        printf(ANSI_COLOR_GREEN"[SCHEDULER] Received process ID: %d, arrival time: %d, remaining_time: %d at %d\n"ANSI_COLOR_RESET,
-               received_pcb.pid, received_pcb.arrival_time, received_pcb.remaining_time, get_clk());
+        printf(
+            ANSI_COLOR_GREEN"[SCHEDULER] Received process ID: %d, arrival time: %d, remaining_time: %d at %d\n"
+            ANSI_COLOR_RESET,
+            received_pcb.pid, received_pcb.arrival_time, received_pcb.remaining_time, get_clk());
 
         PCB* new_pcb = (PCB*)malloc(sizeof(PCB));
         if (!new_pcb)
@@ -401,7 +404,7 @@ int init_scheduler()
             perror("Failed to allocate memory for rr_queue");
             return -1;
         }
-        initQueue(rr_queue, sizeof(PCB*));
+        initQueue(rr_queue, sizeof(PCB));
     }
 
     // Init IPC
