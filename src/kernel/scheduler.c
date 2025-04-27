@@ -37,14 +37,9 @@ void run_scheduler()
         return;
     }
 
-    int crt_clk = get_clk();
-    int old_clk = -1;
 
     while (1)
     {
-        while ((crt_clk = get_clk()) == old_clk) usleep(1000);
-        old_clk = crt_clk;
-
         int receive_status = receive_processes();
         if (receive_status == -2 && !process_count)
         {
@@ -53,142 +48,155 @@ void run_scheduler()
             break; // Exit the scheduling loop
         }
 
-        // --------- Scheduling Algorithm Dispatch ---------
-        if (scheduler_type == HPF) // HPF
+        if (scheduler_type == SRTN || scheduler_type == HPF)
         {
-            running_process = hpf(min_heap_queue, crt_clk);
-            if (running_process == NULL) continue; // there is no process to run
+            int crt_clk = get_clk();
+            int old_clk = -1;
 
-            // Resume the process
-            kill(running_process->pid, SIGCONT);
-            printf(ANSI_COLOR_GREEN"[SCHEDULER] RUNNING PID %d\n"ANSI_COLOR_RESET, running_process->pid);
-
-            // Polling loop to check if process still exists
-            pid_t rpid = running_process != NULL ? running_process->pid : -1;
-            do
+            while ((crt_clk = get_clk()) == old_clk) usleep(1000);
+            old_clk = crt_clk;
+            // --------- Scheduling Algorithm Dispatch ---------
+            if (scheduler_type == HPF) // HPF
             {
-                // Try sending signal 0 to process - this doesn't actually send a signal
-                // but checks if the process exists, and we have permission to send signals
-                if (kill(rpid, 0) < 0)
+                running_process = hpf(min_heap_queue, crt_clk);
+                if (running_process == NULL) continue; // there is no process to run
+
+                // Resume the process
+                kill(running_process->pid, SIGCONT);
+                printf(ANSI_COLOR_GREEN"[SCHEDULER] RUNNING PID %d\n"ANSI_COLOR_RESET, running_process->pid);
+
+                // Polling loop to check if process still exists
+                pid_t rpid = running_process != NULL ? running_process->pid : -1;
+                do
                 {
-                    if (errno == ESRCH)
+                    // Try sending signal 0 to process - this doesn't actually send a signal
+                    // but checks if the process exists, and we have permission to send signals
+                    if (kill(rpid, 0) < 0)
                     {
-                        // Process no longer exists
-                        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d has terminated\n"ANSI_COLOR_RESET, rpid);
-                        break;
-                    }
-                }
-                usleep(1000); // 1ms
-                receive_processes();
-                // Allow scheduler to receive messages during polling    receive_processes();
-                rpid = running_process != NULL ? rpid : -1;
-            }
-            while (rpid != -1);
-        }
-        else if (scheduler_type == SRTN)
-        {
-            running_process = srtn(min_heap_queue);
-            if (running_process == NULL) continue; // there is no process to run
-            int remaining_time = running_process->remaining_time;
-            kill(running_process->pid,SIGCONT);
-            int crt_time = get_clk();
-            int old_time = crt_time;
-
-            short has_received = 0;
-
-            while (remaining_time > 0 && !has_received)
-            {
-                while ((crt_time = get_clk()) == old_time)
-                {
-                    usleep(1000);
-                    if (receive_processes() == 0) has_received = 1;
-                } // busy wait the scheduler for a clk
-                remaining_time -= crt_time - old_time;
-                old_time = crt_time;
-            }
-
-            // If the child hasn't finished execution else it would be null
-            if (running_process != NULL)
-            {
-                if (remaining_time == 0)
-                {
-                    int tries = 0;
-                    pid_t rpid = running_process != NULL ? running_process->pid : -1;
-                    do
-                    {
-                        // Try sending signal 0 to process - this doesn't actually send a signal
-                        // but checks if the process exists, and we have permission to send signals
-                        if (kill(rpid, 0) < 0)
+                        if (errno == ESRCH)
                         {
-                            if (errno == ESRCH)
-                            {
-                                // Process no longer exists
-                                // printf("[SCHEDULER] Process %d has terminated\n", rpid);
-                                break;
-                            }
-                        }
-                        usleep(1000); // 1ms
-                        receive_processes();
-                        if (tries > 10)
-                        {
-                            printf(
-                                ANSI_COLOR_GREEN
-                                "[SCHEDULER] Process %d took more than 10 tries to terminate.\nSomething is wrong, sending SIGINT\n"
-                                ANSI_COLOR_RESET, rpid);
-                            kill(rpid,SIGINT);
-                        }
-                        tries++;
-                        // Allow scheduler to receive messages during polling    receive_processes();
-                        rpid = running_process != NULL ? rpid : -1;
-                    }
-                    while (rpid != -1);
-                }
-
-                if (remaining_time > 0)
-                {
-                    printf(ANSI_COLOR_GREEN"[SCHEDULER] SENDING SIGTSP TO %d\n"ANSI_COLOR_RESET, running_process->pid);
-                    kill(running_process->pid, SIGTSTP); // Pause the child for context switching
-
-                    // Wait for the process to actually stop
-                    while (1)
-                    {
-                        // Check if the lock file has been removed (indicating process is stopped)
-                        if (access("/tmp/process.lock", F_OK) != 0)
-                        {
-                            // Lock file doesn't exist, so process is stopped
+                            // Process no longer exists
+                            printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d has terminated\n"ANSI_COLOR_RESET, rpid);
                             break;
                         }
-                        usleep(1); // Small delay before checking again
+                    }
+                    usleep(1000); // 1ms
+                    receive_processes();
+                    // Allow scheduler to receive messages during polling    receive_processes();
+                    rpid = running_process != NULL ? rpid : -1;
+                }
+                while (rpid != -1);
+            }
+            else if (scheduler_type == SRTN)
+            {
+                running_process = srtn(min_heap_queue);
+                if (running_process == NULL) continue; // there is no process to run
+                int remaining_time = running_process->remaining_time;
+                kill(running_process->pid,SIGCONT);
+                int crt_time = get_clk();
+                int old_time = crt_time;
+
+                short has_received = 0;
+
+                while (remaining_time > 0 && !has_received)
+                {
+                    while ((crt_time = get_clk()) == old_time)
+                    {
+                        usleep(1000);
+                        if (receive_processes() == 0) has_received = 1;
+                    } // busy wait the scheduler for a clk
+                    remaining_time -= crt_time - old_time;
+                    old_time = crt_time;
+                }
+
+                // If the child hasn't finished execution else it would be null
+                if (running_process != NULL)
+                {
+                    if (remaining_time == 0)
+                    {
+                        int tries = 0;
+                        pid_t rpid = running_process != NULL ? running_process->pid : -1;
+                        do
+                        {
+                            // Try sending signal 0 to process - this doesn't actually send a signal
+                            // but checks if the process exists, and we have permission to send signals
+                            if (kill(rpid, 0) < 0)
+                            {
+                                if (errno == ESRCH)
+                                {
+                                    // Process no longer exists
+                                    // printf("[SCHEDULER] Process %d has terminated\n", rpid);
+                                    break;
+                                }
+                            }
+                            usleep(1000); // 1ms
+                            receive_processes();
+                            if (tries > 10)
+                            {
+                                printf(
+                                    ANSI_COLOR_GREEN
+                                    "[SCHEDULER] Process %d took more than 10 tries to terminate.\nSomething is wrong, sending SIGINT\n"
+                                    ANSI_COLOR_RESET, rpid);
+                                kill(rpid,SIGINT);
+                            }
+                            tries++;
+                            // Allow scheduler to receive messages during polling    receive_processes();
+                            rpid = running_process != NULL ? rpid : -1;
+                        }
+                        while (rpid != -1);
                     }
 
-                    running_process->status = READY;
-                    running_process->remaining_time = remaining_time;
-                    running_process->last_run_time = crt_time;
-                    min_heap_insert(min_heap_queue, running_process);
-                    running_process = NULL;
+                    if (remaining_time > 0)
+                    {
+                        printf(ANSI_COLOR_GREEN"[SCHEDULER] SENDING SIGTSP TO %d at %d\n"ANSI_COLOR_RESET,
+                               running_process->pid, crt_clk);
+                        kill(running_process->pid, SIGTSTP); // Pause the child for context switching
+
+                        // Wait for the process to actually stop
+                        while (1)
+                        {
+                            // Check if the lock file has been removed (indicating process is stopped)
+                            if (access("/tmp/process.lock", F_OK) != 0)
+                            {
+                                // Lock file doesn't exist, so process is stopped
+                                break;
+                            }
+                            usleep(1); // Small delay before checking again
+                        }
+
+                        running_process->status = READY;
+                        running_process->remaining_time = remaining_time;
+                        running_process->last_run_time = crt_time;
+                        min_heap_insert(min_heap_queue, running_process);
+                        running_process = NULL;
+                    }
                 }
             }
         }
         else if (scheduler_type == RR)
         {
+            int crt_clk = get_clk();
             running_process = rr(rr_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
-            printf("[SCHEDULER] RUNNING PID %d at %d\n ", running_process->pid, crt_clk);
+            printf("[SCHEDULER] RUNNING PID %d at %d\n", running_process->pid, crt_clk);
             if (kill(running_process->pid,SIGCONT) < 0)
-            {
                 fprintf(stderr, "[SCHEDULER] KILL RETURNED %d",errno);
-            };
+
             int crt_time = get_clk();
             int remaining_time = running_process->remaining_time;
             int time_to_run = (remaining_time < quantum)
                                   ? remaining_time
                                   : quantum;
+            printf(ANSI_COLOR_GREEN"[SCHEDULER] RR: Time To Run until next scheduling: %d.\n"ANSI_COLOR_RESET,
+                   time_to_run);
+
             int end_time = crt_time + time_to_run;
             while ((crt_time = get_clk()) < end_time)
             {
-                usleep(100);
+                usleep(1);
                 receive_processes();
             }; // busy wait the scheduler for a quantum
+            remaining_time -= time_to_run;
 
             // If the child hasn't finished execution it wouldn't be null
             if (running_process != NULL)
@@ -212,14 +220,14 @@ void run_scheduler()
                         }
                         receive_processes();
                         usleep(1000); // 1ms
-                        if (tries > 10)
-                        {
-                            printf(
-                                ANSI_COLOR_GREEN
-                                "[SCHEDULER] Process %d took more than 10 tries to terminate.\nSomething is wrong, sending SIGINT\n"
-                                ANSI_COLOR_RESET, rpid);
-                            kill(rpid,SIGINT);
-                        }
+                        // if (tries > 10)
+                        // {
+                        //     printf(
+                        //         ANSI_COLOR_GREEN
+                        //         "[SCHEDULER] Process %d took more than 10 tries to terminate.\nSomething is wrong, sending SIGINT\n"
+                        //         ANSI_COLOR_RESET, rpid);
+                        //     kill(rpid,SIGINT);
+                        // }
                         tries++;
                         // Allow scheduler to receive messages during polling    receive_processes();
                         rpid = running_process != NULL ? rpid : -1;
@@ -227,8 +235,12 @@ void run_scheduler()
                 }
                 else
                 {
-                    printf(ANSI_COLOR_GREEN"[SCHEDULER] SENDING SIGTSP TO %d\n"ANSI_COLOR_RESET, running_process->pid);
-                    kill(running_process->pid, SIGTSTP); // Pause the child for context switching
+                    printf(ANSI_COLOR_GREEN"[SCHEDULER] SENDING SIGTSP TO %d at %d\n"ANSI_COLOR_RESET,
+                           running_process->pid, crt_clk);
+                    if (kill(running_process->pid,SIGTSTP) < 0)
+                    {
+                        fprintf(stderr, "[SCHEDULER] KILL RETURNED %d WHEN SENDING SIGTSTP",errno);
+                    };
 
                     // Wait for the process to actually stop
                     while (1)
@@ -249,12 +261,15 @@ void run_scheduler()
                 }
             }
         }
+
+
         else
         {
             fprintf(stderr, ANSI_COLOR_GREEN"[SCHEDULER] Unknown scheduler_type: %d\n"ANSI_COLOR_RESET, scheduler_type);
             exit(EXIT_FAILURE);
         }
     }
+
     // Must Be called before the clock is destoryed !!!
     generate_statistics();
     destroy_clk(1);
@@ -384,10 +399,10 @@ void scheduler_cleanup(int signum)
 
     printf(ANSI_COLOR_GREEN"[SCHEDULER] scheduler_cleanup FINISHED \n"ANSI_COLOR_RESET);
 
-    if (signum != 0)
-    {
-        exit(signum);
-    }
+    // if (signum != 0)
+    // {
+    exit(0);
+    // }
 }
 
 void child_cleanup()
