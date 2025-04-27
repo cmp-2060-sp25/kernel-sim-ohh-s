@@ -173,7 +173,11 @@ void run_scheduler()
         {
             running_process = rr(rr_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
-            kill(running_process->pid,SIGCONT);
+            printf("[SCHEDULER] RUNNING PID %d at %d\n ", running_process->pid, crt_clk);
+            if (kill(running_process->pid,SIGCONT) < 0)
+            {
+                fprintf(stderr, "[SCHEDULER] KILL RETURNED %d",errno);
+            };
             int crt_time = get_clk();
             int remaining_time = running_process->remaining_time;
             int time_to_run = (remaining_time < quantum)
@@ -206,8 +210,8 @@ void run_scheduler()
                                 break;
                             }
                         }
-                        usleep(1000); // 1ms
                         receive_processes();
+                        usleep(1000); // 1ms
                         if (tries > 10)
                         {
                             printf(
@@ -236,8 +240,8 @@ void run_scheduler()
                             break;
                         }
                         usleep(1); // Small delay before checking again
+                        receive_processes();
                     }
-                    kill(running_process->pid, SIGTSTP); // Pause for context switch
                     running_process->status = READY;
                     running_process->remaining_time = remaining_time; // Update the struct
                     running_process->last_run_time = crt_time;

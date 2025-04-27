@@ -63,7 +63,7 @@ int get_clk()
 {
     if (shmaddr == NULL)
     {
-        perror("SHMADDR IS BEING ACCESSED ALTHOUGH NULL");
+        perror("[CLOCK] SHMADDR IS BEING ACCESSED ALTHOUGH NULL");
         return -1;
     }
     else
