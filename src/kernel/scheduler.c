@@ -112,6 +112,7 @@ void run_scheduler()
             {
                 if (remaining_time == 0)
                 {
+                    int tries = 0;
                     pid_t rpid = running_process != NULL ? running_process->pid : -1;
                     do
                     {
@@ -128,6 +129,15 @@ void run_scheduler()
                         }
                         usleep(1000); // 1ms
                         receive_processes();
+                        if (tries > 10)
+                        {
+                            printf(
+                                ANSI_COLOR_GREEN
+                                "[SCHEDULER] Process %d took more than 10 tries to terminate.\nSomething is wrong, sending SIGINT\n"
+                                ANSI_COLOR_RESET, rpid);
+                            kill(rpid,SIGINT);
+                        }
+                        tries++;
                         // Allow scheduler to receive messages during polling    receive_processes();
                         rpid = running_process != NULL ? rpid : -1;
                     }
@@ -165,27 +175,74 @@ void run_scheduler()
             if (running_process == NULL) continue; // there is no process to run
             kill(running_process->pid,SIGCONT);
             int crt_time = get_clk();
-            int time_to_run = (running_process->remaining_time < quantum)
-                                  ? running_process->remaining_time
+            int remaining_time = running_process->remaining_time;
+            int time_to_run = (remaining_time < quantum)
+                                  ? remaining_time
                                   : quantum;
             int end_time = crt_time + time_to_run;
-            while ((crt_time = get_clk()) < end_time); // busy wait the scheduler for a quantum
-            kill(running_process->pid,SIGTSTP); // Pause the child for context switching
-            running_process->status = READY;
-            running_process->remaining_time -= time_to_run;
-            running_process->last_run_time = crt_time;
-            if (running_process->remaining_time)
-                enqueue(rr_queue, running_process);
-            else
+            while ((crt_time = get_clk()) < end_time)
             {
-                running_process->status = TERMINATED;
-                running_process->finish_time = crt_time;
-                running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) -
-                    running_process->runtime;
-                running_process->turnaround_time = running_process->finish_time - running_process->arrival_time;
-                running_process->weighted_turnaround = (float)running_process->turnaround_time / running_process->
-                    runtime;
-                log_process_state(running_process, "finished", get_clk());
+                usleep(100);
+                receive_processes();
+            }; // busy wait the scheduler for a quantum
+
+            // If the child hasn't finished execution it wouldn't be null
+            if (running_process != NULL)
+            {
+                if (remaining_time <= 0)
+                {
+                    int tries = 0;
+                    pid_t rpid = running_process != NULL ? running_process->pid : -1;
+                    while (rpid != -1)
+                    {
+                        // Try sending signal 0 to process - this doesn't actually send a signal
+                        // but checks if the process exists, and we have permission to send signals
+                        if (kill(rpid, 0) < 0)
+                        {
+                            if (errno == ESRCH)
+                            {
+                                // Process no longer exists
+                                // printf("[SCHEDULER] Process %d has terminated\n", rpid);
+                                break;
+                            }
+                        }
+                        usleep(1000); // 1ms
+                        receive_processes();
+                        if (tries > 10)
+                        {
+                            printf(
+                                ANSI_COLOR_GREEN
+                                "[SCHEDULER] Process %d took more than 10 tries to terminate.\nSomething is wrong, sending SIGINT\n"
+                                ANSI_COLOR_RESET, rpid);
+                            kill(rpid,SIGINT);
+                        }
+                        tries++;
+                        // Allow scheduler to receive messages during polling    receive_processes();
+                        rpid = running_process != NULL ? rpid : -1;
+                    }
+                }
+                else
+                {
+                    printf(ANSI_COLOR_GREEN"[SCHEDULER] SENDING SIGTSP TO %d\n"ANSI_COLOR_RESET, running_process->pid);
+                    kill(running_process->pid, SIGTSTP); // Pause the child for context switching
+
+                    // Wait for the process to actually stop
+                    while (1)
+                    {
+                        // Check if the lock file has been removed (indicating process is stopped)
+                        if (access("/tmp/process.lock", F_OK) != 0)
+                        {
+                            // Lock file doesn't exist, so process is stopped
+                            break;
+                        }
+                        usleep(1); // Small delay before checking again
+                    }
+                    kill(running_process->pid, SIGTSTP); // Pause for context switch
+                    running_process->status = READY;
+                    running_process->remaining_time = remaining_time; // Update the struct
+                    running_process->last_run_time = crt_time;
+                    enqueue(rr_queue, running_process);
+                }
             }
         }
         else
