@@ -40,30 +40,30 @@ void sigContHandler(int signum)
     signal(SIGCONT, sigContHandler);
 }
 
-int get_process_info(int proc_shmid, pid_t pid, process_info_t* info)
+process_info_t get_process_info(int proc_shmid)
 {
-    if (proc_shmid == -1) return -1;
+    process_info_t process_info = {.status = -1, .pid = -1, .time_to_run = -1, .current_clk = -1};
+
+    if (proc_shmid == -1) return process_info;
     process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
     if ((void*)shm == (void*)-1)
     {
         perror("Error attaching shared memory in process");
-        return -1;
+        return process_info;
     }
 
-    if (shm->pid == pid)
+    if (shm->pid == getpid())
     {
-        if (info != NULL)
-        {
-            info->remaining_time = shm->remaining_time;
-            info->status = shm->status;
-            info->pid = shm->pid;
-        }
+        process_info.time_to_run = shm->time_to_run;
+        process_info.status = shm->status;
+        process_info.pid = shm->pid;
+        process_info.current_clk = shm->current_clk;
         shmdt(shm);
-        return 0;
+        return process_info;
     }
 
     shmdt(shm);
-    return -1;
+    return process_info;
 }
 
 int get_time_to_run(int proc_shmid, pid_t pid)
@@ -77,30 +77,36 @@ int get_time_to_run(int proc_shmid, pid_t pid)
     }
     int remaining_time = -1;
     int status = 0;
-    if (shm->pid == pid)
+    if (shm->pid == pid && shm->status == 1 && shm->current_clk == get_clk())
     {
-        remaining_time = shm->remaining_time;
+        remaining_time = shm->time_to_run;
         status = shm->status;
     }
+    else
+    {
+        // Process is not running, return -1
+        remaining_time = -1;
+    }
+
     shmdt(shm);
     return status ? remaining_time : -1;
 }
 
-void set_remaining_time(int proc_shmid, pid_t pid, int remaining)
-{
-    if (proc_shmid == -1) return;
-    process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
-    if ((void*)shm == (void*)-1) return;
-    if (shm->pid == pid)
-    {
-        shm->remaining_time = remaining;
-        if (remaining == 0)
-            shm->status = 0;
-    }
-    shmdt(shm);
-}
+// void set_remaining_time(int proc_shmid, pid_t pid, int remaining)
+// {
+//     if (proc_shmid == -1) return;
+//     process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
+//     if ((void*)shm == (void*)-1) return;
+//     if (shm->pid == pid)
+//     {
+//         shm->remaining_time = remaining;
+//         if (remaining == 0)
+//             shm->status = 0;
+//     }
+//     shmdt(shm);
+// }
 
-int get_process_status(int proc_shmid, pid_t pid)
+int get_process_status(int proc_shmid)
 {
     if (proc_shmid == -1) return 0;
     process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
@@ -111,7 +117,7 @@ int get_process_status(int proc_shmid, pid_t pid)
     }
 
     int status = 0;
-    if (shm->pid == pid)
+    if (shm->pid == getpid() && shm->current_clk == get_clk())
     {
         status = shm->status;
     }
@@ -143,52 +149,69 @@ void run_process(int runtime)
         perror("[PROCESS] Error getting shared memory");
         proc_shmid = -1;
     }
-    while (!get_process_status(proc_shmid, getpid()))
+
+    // Sync clock before any get_clk() usage!
+    sync_clk();
+
+    // Make the process wait when spawned until it is told to run
+    while (!get_process_status(proc_shmid))
         usleep(1);
 
     printf("[PROCESS] %d Woke Up For The First Time\n", getpid());
     printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d started with runtime %d seconds.\n"ANSI_COLOR_WHITE, getpid(),
            runtime);
-    sync_clk();
     int remaining = runtime;
-
-    // Initialize status in shared memory to running
-    update_process_status(proc_shmid, getpid(), 1);
 
     while (remaining > 0)
     {
         // Continuously check status from shared memory
-        if (get_process_status(proc_shmid, getpid()))
+        if (get_process_status(proc_shmid) && get_process_info(proc_shmid).current_clk == get_clk())
         {
-            int time_slice = 0;
-            while (time_slice <= 0)
+            int time_to_run = 0;
+            while (time_to_run <= 0)
             {
-                time_slice = get_time_to_run(proc_shmid, getpid());
+                time_to_run = get_time_to_run(proc_shmid, getpid());
                 usleep(1000);
             }
-            if (time_slice > remaining)
-                time_slice = remaining;
+            if (time_to_run > remaining)
+                time_to_run = remaining;
 
             printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d will run for %d units (remaining: %d)\n"ANSI_COLOR_WHITE,
-                   getpid(), time_slice, remaining);
+                   getpid(), time_to_run, remaining);
 
             int start_time = get_clk();
             int elapsed = 0;
-            while (elapsed < time_slice && get_process_status(proc_shmid, getpid()))
+
+            // At each tick, check handshake and status
+            while (elapsed < time_to_run)
             {
                 int now = get_clk();
                 if (now != start_time)
                 {
-                    int diff = now - start_time;
-                    for (int i = 0; i < diff && elapsed < time_slice; ++i)
-                    {
-                        printf(
-                            ANSI_COLOR_YELLOW
-                            "[PROCESS] PID %d ran for 1 second. Remaining: %d, Remaining in slice: %d\n"
-                            ANSI_COLOR_WHITE,
-                            getpid(), remaining - elapsed - 1, time_slice - elapsed - 1);
-                        elapsed++;
-                    }
+                    // // Check handshake at each tick
+                    // process_info_t info = get_process_info(proc_shmid);
+                    // if (!(info.status == 1 && info.current_clk == now && info.pid == getpid()))
+                    // {
+                    //     // Preempted or handshake broken
+                    //     update_process_status(proc_shmid, getpid(), 0);
+                    //     printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d preempted at clk %d\n"ANSI_COLOR_WHITE, getpid(), now);
+                    //     raise(SIGTSTP);
+                    //     // Wait here until scheduler gives a new handshake
+                    //     while (1) {
+                    //         usleep(10);
+                    //         process_info_t new_info = get_process_info(proc_shmid);
+                    //         if (new_info.status == 1 && new_info.current_clk == get_clk() && new_info.pid == getpid())
+                    //             break;
+                    //     }
+                    //     // After waking up, restart the outer while loop to re-check handshake/time_to_run
+                    //     break;
+                    // }
+                    printf(
+                        ANSI_COLOR_YELLOW
+                        "[PROCESS] PID %d ran for 1 second. Remaining: %d, Remaining in slice: %d\n"
+                        ANSI_COLOR_WHITE,
+                        getpid(), remaining - elapsed - 1, time_to_run - elapsed - 1);
+                    elapsed++;
                     start_time = now;
                 }
                 usleep(1000);
@@ -196,24 +219,29 @@ void run_process(int runtime)
 
             // Update remaining time
             remaining -= elapsed;
-            set_remaining_time(proc_shmid, getpid(), remaining);
-
+            update_process_status(proc_shmid, getpid(), 0);
             printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished time slice, remaining: %d\n"ANSI_COLOR_WHITE,
                    getpid(), remaining);
-
-            if (remaining > 0 && get_process_status(proc_shmid, getpid()))
-            {
-                // Update status in shared memory
-                update_process_status(proc_shmid, getpid(), 0);
-                raise(SIGTSTP); // Signal process to stop itself
+        }
+        else if (remaining > 0 && get_process_status(proc_shmid) && get_process_info(proc_shmid).current_clk != get_clk())
+        {
+            // Update status in shared memory
+            update_process_status(proc_shmid, getpid(), 0);
+            raise(SIGTSTP); // Signal process to stop itself
+            // Wait here until scheduler gives a new handshake
+            while (1) {
+                usleep(1000);
+                process_info_t new_info = get_process_info(proc_shmid);
+                if (new_info.status == 1 && new_info.current_clk == get_clk() && new_info.pid == getpid())
+                    break;
             }
+            // After waking up, restart the outer while loop to re-check handshake/time_to_run
         }
         else
             usleep(1000); // Wait before checking status again
     }
 
     // Finished execution
-    set_remaining_time(proc_shmid, getpid(), 0);
     update_process_status(proc_shmid, getpid(), 0);
     kill(process_generator_pid, SIGCHLD);
     printf(ANSI_COLOR_YELLOW"[PROCESS] Sending SIGCHLD to: %d\n"ANSI_COLOR_WHITE, process_generator_pid);

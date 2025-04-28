@@ -60,7 +60,9 @@ void run_scheduler()
             if (running_process == NULL) continue; // there is no process to run
 
             int time_slice = running_process->remaining_time;
-            write_process_info(process_shm_id, running_process->pid, time_slice, 1);
+
+            // Write current clock as handshake
+            write_process_info(process_shm_id, running_process->pid, time_slice, 1, crt_clk);
 
             running_process->remaining_time = 0;
             pid_t p_pid = running_process->pid;
@@ -90,63 +92,50 @@ void run_scheduler()
             if (running_process == NULL) continue; // there is no process to run
 
             pid_t p_pid = running_process->pid;
+            int remaining_time = running_process->remaining_time;
             process_info_t process_info;
             int ran = 0;
             int preempt = 0;
 
-            // First, continue the process and let it know it can run
-            write_process_info(process_shm_id, running_process->pid, 1, 1);
+            int crt_clk = get_clk();
+            // Write current clock as handshake
+            write_process_info(process_shm_id, running_process->pid, 1, 1, crt_clk);
 
             printf(ANSI_COLOR_GREEN"[SCHEDULER] RUNNING PID %d for SRTN scheduling\n"ANSI_COLOR_RESET,
                    running_process->pid);
             kill(running_process->pid, SIGCONT);
-            int remaining_time = running_process->remaining_time;
+
+            // While the process has more time to run
             while (ran < remaining_time)
             {
-                // Check if there are any newly arrived processes
-                int received = receive_processes();
-
-                // If we received new processes and the min heap is not empty, check for preemption
-                if (received == 0 && !min_heap_is_empty(min_heap_queue))
+                // Wait until the process finishes the time slice and during that check if any new process arrives
+                while (read_process_info(process_shm_id, p_pid).status != 0)
                 {
-                    PCB* shortest = (PCB*)min_heap_get_min(min_heap_queue);
-                    if (shortest && shortest->remaining_time < remaining_time - ran)
+                    // Check if there are any newly arrived processes
+                    // If we received new processes and the min heap is not empty, check for preemption
+                    if (receive_processes() == 0 && !min_heap_is_empty(min_heap_queue))
                     {
-                        // Preempt the current process
-                        preempt = 1;
-                        printf(
-                            ANSI_COLOR_GREEN
-                            "[SCHEDULER] Preempting PID %d after running %d units. New shorter process found.\n"
-                            ANSI_COLOR_RESET,
-                            running_process->pid, ran);
-                        break;
+                        PCB* shortest = (PCB*)min_heap_get_min(min_heap_queue);
+                        if (shortest && shortest->remaining_time < remaining_time - ran)
+                            // Preempt the current process
+                            preempt = 1;
                     }
+                    usleep(1);
                 }
 
-                process_info = read_process_info(process_shm_id, p_pid);
+                ran++;
 
-                // Process finished its current time unit
-                if (process_info.status == 0)
+                if (running_process)
                 {
-                    ran++;
-
-                    // Check if the process has completely finished (remaining_time is 0)
-                    if (process_info.remaining_time <= 0)
+                    // Process has more time to run
+                    if (remaining_time > ran)
                     {
-                        printf(
-                            ANSI_COLOR_GREEN"[SCHEDULER] PID %d reported completion via shared memory\n"
-                            ANSI_COLOR_RESET,
-                            process_info.pid);
-                        break; // Exit the loop to handle process cleanup
-                    }
+                        // If the process needs to be prempted then break
+                        if (preempt) break;
 
-                    // Process has more time to run and isn't being preempted
-                    if (ran < running_process->remaining_time && !preempt)
-                    {
+                        // else
                         // Instruct process to run for another time unit
-                        write_process_info(process_shm_id, running_process->pid, 1, 1);
-                        kill(running_process->pid, SIGCONT); // Ensure process continues
-
+                        write_process_info(process_shm_id, running_process->pid, 1, 1, get_clk());
                         printf(
                             ANSI_COLOR_GREEN"[SCHEDULER] PID %d continued for another unit. %d/%d completed\n"
                             ANSI_COLOR_RESET,
@@ -154,7 +143,7 @@ void run_scheduler()
                     }
                     else
                     {
-                        // Process completed its current time slice or needs to be preempted
+                        // Process completed its current time slice
                         printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d completed time slice\n"ANSI_COLOR_RESET,
                                running_process->pid);
                         break;
@@ -164,7 +153,7 @@ void run_scheduler()
                 usleep(1000); // Small sleep to prevent CPU hogging
             }
 
-            // Handle process state after execution
+            // handle preempting and process still exists and there is still time left
             if (preempt && running_process && (remaining_time - ran) > 0)
             {
                 // Update remaining time and reinsert into min heap
@@ -173,7 +162,7 @@ void run_scheduler()
                 running_process->status = READY;
 
                 // Update process status to paused
-                write_process_info(process_shm_id, running_process->pid, running_process->remaining_time, 0);
+                write_process_info(process_shm_id, running_process->pid, 0, 0, crt_clk);
                 kill(running_process->pid, SIGTSTP); // Stop the process
 
                 // Wait gracefully until the process reports that it stopped
@@ -193,23 +182,15 @@ void run_scheduler()
                 min_heap_insert(min_heap_queue, running_process);
                 running_process = NULL;
             }
-            // Process completed execution
+            // The process finished running
             else if ((remaining_time - ran) <= 0)
             {
-                if (running_process)
-                {
-                    running_process->remaining_time = 0;
-                    // Wait for the process to signal completion
-                    write_process_info(process_shm_id, running_process->pid, 0, 0);
-                }
-
                 // Wait for the process to be cleaned up
                 while (running_process != NULL)
                 {
                     usleep(1000);
                     receive_processes();
                 }
-
                 printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid);
             }
         }
@@ -222,8 +203,8 @@ void run_scheduler()
             int time_slice = (running_process->remaining_time < quantum) ? running_process->remaining_time : quantum;
             pid_t p_pid = running_process->pid;
 
-            // Tell the process how much time it can run and set its status to running
-            write_process_info(process_shm_id, running_process->pid, time_slice, 1);
+            // Write current clock as handshake
+            write_process_info(process_shm_id, running_process->pid, time_slice, 1, crt_clk);
 
             printf(ANSI_COLOR_GREEN"[SCHEDULER] Running PID %d for %d units (RR)\n"ANSI_COLOR_RESET,
                    running_process->pid, time_slice);
@@ -252,9 +233,11 @@ void run_scheduler()
 
             if (running_process->remaining_time <= 0)
             {
-                // Process has completed
-                write_process_info(process_shm_id, running_process->pid, 0, 0);
-
+                if (running_process)
+                {
+                    // Process has completed
+                    write_process_info(process_shm_id, running_process->pid, 0, 0, 0);
+                }
                 // Wait for the process to be cleaned up
                 while (running_process != NULL)
                 {
