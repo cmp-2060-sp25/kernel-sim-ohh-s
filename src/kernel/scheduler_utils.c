@@ -11,6 +11,7 @@
 #include "min_heap.h"
 #include "process_generator.h"
 #include "colors.h"
+#include "shared_mem.h"
 extern int scheduler_type;
 extern finishedProcessInfo** finished_process_info;
 extern int finished_processes_count;

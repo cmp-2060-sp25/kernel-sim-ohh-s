@@ -138,7 +138,7 @@ int main(int argc, char* argv[])
                         else if (pid > 0)
                         {
                             process_parameters[i]->pid = pid;
-                            kill(pid, SIGTSTP); // Immediately stop the child process
+                            // kill(pid, SIGTSTP); // Immediately stop the child process
                         }
                         else
                         {
@@ -280,7 +280,8 @@ void child_process_handler(int signum)
     // Reap all terminated children
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
     {
-        printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Cleaned up child process PID: %d\n"ANSI_COLOR_RESET, pid);
+        printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Acknowledged that child process PID: %d has died.\n"ANSI_COLOR_RESET,
+               pid);
     }
 }
 
@@ -322,8 +323,9 @@ void process_generator_cleanup(int signum)
                 break;
             }
 
-            printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Waiting for queue to empty: %ld messages remaining\n"ANSI_COLOR_RESET,
-                   queue_info.msg_qnum);
+            printf(
+                ANSI_COLOR_BLUE"[PROC_GENERATOR] Waiting for queue to empty: %ld messages remaining\n"ANSI_COLOR_RESET,
+                queue_info.msg_qnum);
             usleep(100000); // Sleep for 100ms before checking again
         }
 
