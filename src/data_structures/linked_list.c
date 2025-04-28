@@ -1,20 +1,36 @@
 #include "linked_list.h"
 
-void initList(linked_list* list, size_t dataSize) {
+#include <stdio.h>
+
+void initList(linked_list* list, size_t dataSize)
+{
     list->head = NULL, list->tail = NULL;
     list->dataSize = dataSize;
     list->size = 0;
 }
 
-void append(linked_list* list, void* item) {
-    ListNode *newNode = (ListNode*)malloc(sizeof(ListNode));
+void append(linked_list* list, void* item)
+{
+    ListNode* newNode = (ListNode*)malloc(sizeof(ListNode));
+    if (!newNode)
+    {
+        perror("Failed to allocate memory for new node");
+        exit(EXIT_FAILURE);
+    }
     newNode->data = malloc(list->dataSize);
+    if (!newNode->data)
+    {
+        perror("Failed to allocate memory for node data");
+        free(newNode);
+        exit(EXIT_FAILURE);
+    }
     memcpy(newNode->data, item, list->dataSize);
     newNode->next = NULL;
 
     if (isListEmpty(list))
         list->head = list->tail = newNode;
-    else {
+    else
+    {
         list->tail->next = newNode;
         list->tail = newNode;
     }
@@ -23,18 +39,20 @@ void append(linked_list* list, void* item) {
 }
 
 
-int isListEmpty(linked_list* list) {
+int isListEmpty(linked_list* list)
+{
     return list->head == NULL;
 }
 
-void* removeFront(linked_list* list) {
-    if(isListEmpty(list)) return NULL;
+void* removeFront(linked_list* list)
+{
+    if (isListEmpty(list)) return NULL;
 
     ListNode* temp = list->head;
-    void *data = temp->data;
+    void* data = temp->data;
 
     list->head = list->head->next;
-    if(isListEmpty(list)) list->tail = NULL;
+    if (isListEmpty(list)) list->tail = NULL;
 
     free(temp);
     list->size--;
@@ -42,22 +60,25 @@ void* removeFront(linked_list* list) {
     return data;
 }
 
-void* getFront(linked_list* list) {
-    if(isListEmpty(list)) return NULL;
+void* getFront(linked_list* list)
+{
+    if (isListEmpty(list)) return NULL;
     return list->head->data;
 }
 
-void clearList(linked_list* list) {
+void clearList(linked_list* list)
+{
     while (!isListEmpty(list))
     {
-        void* data = getFront(list);
+        void* data = removeFront(list);
         free(data);
     }
 }
 
 
 // Endpoints for deque.h
-void prepend(linked_list* list, void* item) {
+void prepend(linked_list* list, void* item)
+{
     ListNode* newNode = (ListNode*)malloc(sizeof(ListNode));
     newNode->data = malloc(list->dataSize);
     memcpy(newNode->data, item, list->dataSize);
@@ -68,23 +89,28 @@ void prepend(linked_list* list, void* item) {
     list->size++;
 }
 
-void* removeBack(linked_list* list) {
+void* removeBack(linked_list* list)
+{
     if (isListEmpty(list)) return NULL;
 
     ListNode* curr = list->head;
     ListNode* prev = NULL;
 
-    while (curr->next) {
+    while (curr->next)
+    {
         prev = curr;
         curr = curr->next;
     }
 
     void* data = curr->data;
 
-    if (prev) {
+    if (prev)
+    {
         prev->next = NULL;
         list->tail = prev;
-    } else {
+    }
+    else
+    {
         list->head = list->tail = NULL;
     }
 
@@ -93,7 +119,7 @@ void* removeBack(linked_list* list) {
     return data;
 }
 
-void* getBack(linked_list* list) {
+void* getBack(linked_list* list)
+{
     return list->tail ? list->tail->data : NULL;
 }
-
