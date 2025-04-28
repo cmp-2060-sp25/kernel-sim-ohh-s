@@ -56,6 +56,7 @@ void run_scheduler()
 
         if (scheduler_type == HPF) // HPF
         {
+            start_process_time = get_clk();
             int crt_clk = get_clk();
             running_process = hpf(min_heap_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
@@ -85,10 +86,13 @@ void run_scheduler()
                 usleep(1000);
                 receive_processes();
             }
+            end_process_time = get_clk();
+            total_busy_time += (end_process_time - start_process_time);
         }
 
         else if (scheduler_type == SRTN)
         {
+            start_process_time = get_clk();
             running_process = srtn(min_heap_queue);
             if (running_process == NULL) continue; // there is no process to run
 
@@ -197,9 +201,12 @@ void run_scheduler()
                     running_process = NULL;
                 }
             }
+            end_process_time = get_clk();
+            total_busy_time += (end_process_time - start_process_time);
         }
         else if (scheduler_type == RR)
         {
+            start_process_time = get_clk();
             int crt_clk = get_clk();
             running_process = rr(rr_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
@@ -260,6 +267,8 @@ void run_scheduler()
                 }
             }
             else { printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid); }
+            end_process_time = get_clk();
+            total_busy_time += (end_process_time - start_process_time);
         }
     }
 
