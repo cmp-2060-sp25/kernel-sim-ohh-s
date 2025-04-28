@@ -12,7 +12,7 @@
 #include "process_generator.h"
 #include "colors.h"
 #include "shared_mem.h"
-#include "scheduler_utils.h"
+extern int total_busy_time;
 extern int scheduler_type;
 extern finishedProcessInfo** finished_process_info;
 extern int finished_processes_count;
@@ -132,11 +132,11 @@ void log_process_state(PCB* process, char* state, int time)
     else if (strcmp(state, "finished") == 0)
     {
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d TA %d WTA %.2f\n",
-            time, process->pid, state, process->arrival_time, process->runtime,
-            0, process->waiting_time,
-            (time - process->arrival_time), /* Turnaround time */
-            (process->runtime > 0) ? ((float)(time - process->arrival_time) / process->runtime) : 0.0); /* Weighted turnaround time */
-        
+                time, process->pid, state, process->arrival_time, process->runtime,
+                0, process->waiting_time,
+                (time - process->arrival_time), // Turnaround time
+                (float)(time - process->arrival_time) / process->runtime); // Weighted turnaround time
+
         printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d finished at time %d\n"ANSI_COLOR_RESET,
                process->pid, time);
     }
@@ -189,6 +189,7 @@ void generate_statistics()
     float total_wait = 0;
     float total_wta = 0;
     float total_ta = 0;
+
     int total_execution_time = get_clk(); // Total simulation time
 
     // Loop through all finished processes
@@ -232,7 +233,7 @@ void generate_statistics()
     float std_wta = sqrt(sum_squared_diff / finished_processes_count);
 
     // Calculate CPU utilization
-    float cpu_utilization = ( cpu_busy_time / total_execution_time) * 100;
+    float cpu_utilization = ((float)(total_busy_time) / total_execution_time) * 100;
 
     // Write to performance file
     FILE* perf_file = fopen("scheduler.perf", "w");

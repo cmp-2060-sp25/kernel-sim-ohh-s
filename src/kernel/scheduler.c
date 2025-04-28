@@ -16,7 +16,7 @@
 
 #include "headers.h"
 #include "colors.h"
-
+extern int total_busy_time;
 extern finishedProcessInfo** finished_process_info;
 // Use pointers for both possible queue types
 min_heap_t* min_heap_queue = NULL;
@@ -40,9 +40,12 @@ void run_scheduler()
         fprintf(stderr, ANSI_COLOR_GREEN"[SCHEDULER] Failed to initialize scheduler\n"ANSI_COLOR_RESET);
         return;
     }
-
+    int start_process_time = 0;
+    int end_process_time = 0;
     while (1)
     {
+
+
         int receive_status = receive_processes();
         if (receive_status == -2 && !process_count)
         {
@@ -53,12 +56,13 @@ void run_scheduler()
         receive_processes();
 
 
+
         if (scheduler_type == HPF) // HPF
         {
             int crt_clk = get_clk();
             running_process = hpf(min_heap_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
-
+            start_process_time = get_clk();
             int time_slice = running_process->remaining_time;
 
             // Write current clock as handshake
@@ -84,13 +88,15 @@ void run_scheduler()
                 usleep(1000);
                 receive_processes();
             }
+            end_process_time = get_clk(); 
+            total_busy_time += (end_process_time - start_process_time);
         }
 
         else if (scheduler_type == SRTN)
         {
             running_process = srtn(min_heap_queue);
             if (running_process == NULL) continue; // there is no process to run
-
+            start_process_time = get_clk(); 
             pid_t p_pid = running_process->pid;
             int remaining_time = running_process->remaining_time;
             process_info_t process_info;
@@ -195,13 +201,15 @@ void run_scheduler()
                 }
                 printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid);
             }
+            end_process_time = get_clk(); 
+            total_busy_time += (end_process_time - start_process_time);
         }
         else if (scheduler_type == RR)
         {
             int crt_clk = get_clk();
             running_process = rr(rr_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
-
+            start_process_time = get_clk();
             int remaining_time = running_process->remaining_time;
             int time_slice = (remaining_time < quantum) ? remaining_time : quantum;
             pid_t p_pid = running_process->pid;
@@ -258,9 +266,10 @@ void run_scheduler()
                 }
             }
             else { printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid); }
+            end_process_time = get_clk(); 
+            total_busy_time += (end_process_time - start_process_time);
         }
     }
-
     // Must Be called before the clock is destroyed !!!
     generate_statistics();
     destroy_clk(1);

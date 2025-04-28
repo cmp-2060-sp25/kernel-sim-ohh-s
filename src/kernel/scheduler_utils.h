@@ -11,4 +11,3 @@ PCB* srtn(min_heap_t* ready_queue);
 PCB* rr(Queue* ready_queue, int current_time);
 void log_process_state(PCB* process, char* state, int time);
 void generate_statistics();
-extern int cpu_busy_time;
