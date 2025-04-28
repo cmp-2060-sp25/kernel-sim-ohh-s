@@ -34,7 +34,6 @@ void run_process(int runtime)
     printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d started with runtime %d seconds.\n"ANSI_COLOR_WHITE, getpid(),
            runtime);
     int remaining = runtime;
-
     while (remaining > 0)
     {
         // Continuously check status from shared memory
@@ -115,9 +114,9 @@ int main(int argc, char* argv[])
     int runtime = atoi(argv[1]);
     process_generator_pid = atoi(argv[2]);
 
-    if (runtime <= 0 || process_generator_pid <= 0)
+    if (runtime < 0 || process_generator_pid < 0)
     {
-        if (runtime <= 0)
+        if (runtime < 0)
             fprintf(stderr, "Runtime must be a positive integer.\n");
         else
             fprintf(stderr, "process_generator_pid must be a positive integer.\n");
@@ -127,7 +126,6 @@ int main(int argc, char* argv[])
     run_process(runtime);
     return 0;
 }
-
 
 
 void sigIntHandler(int signum)

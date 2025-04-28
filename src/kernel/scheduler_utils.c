@@ -50,15 +50,6 @@ PCB* hpf(min_heap_t* ready_queue, int current_time)
     if (!min_heap_is_empty(ready_queue))
     {
         PCB* next_process = min_heap_extract_min(ready_queue);
-        while (next_process->remaining_time == 0)
-        {
-            // @TODO: ASK KHALED
-            log_process_state(next_process, "started", current_time);
-            log_process_state(next_process, "finished", current_time);
-            if (min_heap_is_empty(ready_queue))
-                return NULL;
-            next_process = min_heap_extract_min(ready_queue);
-        }
         next_process->status = RUNNING;
         next_process->waiting_time = current_time - next_process->arrival_time;
         // assuming that any process is initially having start time -1
@@ -107,19 +98,6 @@ PCB* rr(Queue* ready_queue, int current_time)
     if (!isQueueEmpty(ready_queue))
     {
         PCB* next_process = dequeue(ready_queue);
-        while (next_process->remaining_time == 0)
-        {
-            next_process->status = TERMINATED;
-            next_process->finish_time = current_time;
-            next_process->waiting_time = (next_process->finish_time - next_process->arrival_time) - next_process->
-                runtime;
-            next_process->turnaround_time = next_process->finish_time - next_process->arrival_time;
-            next_process->weighted_turnaround = (float)next_process->turnaround_time / next_process->runtime;
-            log_process_state(next_process, "finished", current_time);
-            if (isQueueEmpty(ready_queue))
-                return NULL;
-            next_process = dequeue(ready_queue);
-        }
         next_process->status = RUNNING;
         next_process->waiting_time = (current_time - next_process->arrival_time) - (next_process->runtime - next_process
             ->remaining_time);
@@ -147,7 +125,7 @@ void log_process_state(PCB* process, char* state, int time)
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
                 time, process->pid, state, process->arrival_time, process->runtime,
                 process->remaining_time, process->waiting_time);
-        
+
         printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d started at time %d\n"ANSI_COLOR_RESET,
                process->pid, time);
     }
@@ -167,7 +145,7 @@ void log_process_state(PCB* process, char* state, int time)
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
                 time, process->pid, state, process->arrival_time, process->runtime,
                 process->remaining_time, process->waiting_time);
-                
+
         printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d resumed at time %d\n"ANSI_COLOR_RESET,
                process->pid, time);
     }
@@ -176,7 +154,7 @@ void log_process_state(PCB* process, char* state, int time)
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
                 time, process->pid, state, process->arrival_time, process->runtime,
                 process->remaining_time, process->waiting_time);
-                
+
         printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d %s at time %d\n"ANSI_COLOR_RESET,
                process->pid, state, time);
     }
