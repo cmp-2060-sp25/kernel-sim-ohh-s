@@ -32,7 +32,7 @@ void sigStpHandler(int signum)
 
 void sigContHandler(int signum)
 {
-    printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d received SIGCONT. Resuming...\n"ANSI_COLOR_WHITE, getpid());
+    // printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d received SIGCONT. Resuming...\n"ANSI_COLOR_WHITE, getpid());
 
     // Update status in shared memory to running
     update_process_status(proc_shmid, getpid(), 1);
