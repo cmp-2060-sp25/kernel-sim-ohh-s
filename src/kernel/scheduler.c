@@ -250,7 +250,7 @@ void run_scheduler()
                     running_process->status = READY;
                     running_process->remaining_time = remaining_time;
 
-                    log_process_state(running_process, "blocked", get_clk()); // Add log when process is blocked
+                    log_process_state(running_process, "stopped", get_clk());
 
                     enqueue(rr_queue, running_process);
                     running_process = NULL;
