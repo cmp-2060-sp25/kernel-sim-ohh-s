@@ -19,3 +19,4 @@ process_info_t get_process_info(int proc_shmid);
 void sigIntHandler(int signum);
 void sigStpHandler(int signum);
 void sigContHandler(int signum);
+extern int cpu_busy_time;

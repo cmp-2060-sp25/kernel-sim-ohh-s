@@ -9,7 +9,6 @@
 #include "clk.h"
 #include "colors.h"
 #include "shared_mem.h"
-
 pid_t process_generator_pid;
 int proc_shmid = -1;
 
@@ -70,6 +69,8 @@ void run_process(int runtime)
                         getpid(), remaining - elapsed - 1, time_to_run - elapsed - 1);
                     elapsed++;
                     start_time = now;
+                    // increment busy time 
+                    cpu_busy_time++;
                 }
                 usleep(1000);
             }
