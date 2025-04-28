@@ -56,7 +56,6 @@ void run_scheduler()
         receive_processes();
 
 
-
         if (scheduler_type == HPF) // HPF
         {
             int crt_clk = get_clk();
@@ -88,7 +87,7 @@ void run_scheduler()
                 usleep(1000);
                 receive_processes();
             }
-            end_process_time = get_clk(); 
+            end_process_time = get_clk();
             total_busy_time += (end_process_time - start_process_time);
         }
 
@@ -96,7 +95,7 @@ void run_scheduler()
         {
             running_process = srtn(min_heap_queue);
             if (running_process == NULL) continue; // there is no process to run
-            start_process_time = get_clk(); 
+            start_process_time = get_clk();
             pid_t p_pid = running_process->pid;
             int remaining_time = running_process->remaining_time;
             process_info_t process_info;
@@ -201,7 +200,7 @@ void run_scheduler()
                 }
                 printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid);
             }
-            end_process_time = get_clk(); 
+            end_process_time = get_clk();
             total_busy_time += (end_process_time - start_process_time);
         }
         else if (scheduler_type == RR)
@@ -255,9 +254,9 @@ void run_scheduler()
                     // Process still has time remaining, put it back in the queue
                     running_process->status = READY;
                     running_process->remaining_time = remaining_time;
-                    
+
                     log_process_state(running_process, "blocked", get_clk()); // Add log when process is blocked
-                    
+
                     enqueue(rr_queue, running_process);
                     running_process = NULL;
 
@@ -266,10 +265,11 @@ void run_scheduler()
                 }
             }
             else { printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid); }
-            end_process_time = get_clk(); 
+            end_process_time = get_clk();
             total_busy_time += (end_process_time - start_process_time);
         }
     }
+
     // Must Be called before the clock is destroyed !!!
     generate_statistics();
     destroy_clk(1);

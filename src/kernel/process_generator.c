@@ -329,13 +329,12 @@ void process_generator_cleanup(int signum)
             usleep(100000); // Sleep for 100ms before checking again
         }
 
-        // Now remove the message queue
-        if (msgctl(msgid, IPC_RMID, NULL) == -1)
+        // remove the message queue if still exists
+        struct msqid_ds queue;
+        if (msgctl(msgid, IPC_STAT, &queue) != -1)
         {
-            perror("Error removing message queue");
-        }
-        else
-        {
+            msgctl(msgid, IPC_RMID, NULL);
+            msgid = -1;
             printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Message queue removed successfully\n"ANSI_COLOR_RESET);
         }
     }

@@ -79,15 +79,12 @@ void run_process(int runtime)
             printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished time slice, remaining: %d\n"ANSI_COLOR_WHITE,
                    getpid(), remaining);
         }
-        else if (remaining > 0 && get_process_status(proc_shmid) && get_process_info(proc_shmid).current_clk !=
-            get_clk())
+        else
         {
             // Update status in shared memory
             update_process_status(proc_shmid, getpid(), 0);
             raise(SIGTSTP); // Signal process to stop itself
         }
-        else
-            usleep(1000); // Wait before checking status again
     }
 
     // Finished execution
