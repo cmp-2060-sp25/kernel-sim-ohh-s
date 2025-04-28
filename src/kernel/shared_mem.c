@@ -32,21 +32,21 @@ int create_shared_memory(key_t key)
     return shmid;
 }
 
-void write_process_info(int shm_id, int pid, int remaining_time, int status, int current_clk)
+void write_process_info(int shm_id, int pid, int time_to_run, int status, int current_clk)
 {
     process_info_t* shm = (process_info_t*)shmat(shm_id, NULL, 0);
     if ((void*)shm == (void*)-1) return;
     shm->pid = pid;
-    shm->time_to_run = remaining_time;
+    shm->time_to_run = time_to_run;
     shm->status = status;
     shm->current_clk = current_clk;
     shmdt(shm);
 }
 
 // Overload for backward compatibility (if needed)
-void write_process_info_compat(int shm_id, int pid, int remaining_time, int status)
+void write_process_info_compat(int shm_id, int pid, int time_to_run, int status)
 {
-    write_process_info(shm_id, pid, remaining_time, status, -1);
+    write_process_info(shm_id, pid, time_to_run, status, -1);
 }
 
 process_info_t read_process_info(int shm_id, int pid)

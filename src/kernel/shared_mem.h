@@ -13,7 +13,7 @@ typedef struct
 int create_shared_memory(key_t key);
 int get_shared_memory(key_t key);
 void cleanup_shared_memory(int shmid);
-void write_process_info(int shm_id, int pid, int remaining_time, int status, int current_clk);
+void write_process_info(int shm_id, int pid, int time_to_run, int status, int current_clk);
 process_info_t read_process_info(int shm_id, int pid);
 
 #define SHM_KEY 400
