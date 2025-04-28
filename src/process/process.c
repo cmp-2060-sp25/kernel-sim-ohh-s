@@ -70,21 +70,21 @@ void run_process(int runtime)
                     elapsed++;
                     start_time = now;
                 }
-                usleep(1000);
+                usleep(1);
             }
 
             // Update remaining time
-            remaining -= elapsed;
+            remaining -= time_to_run;
             update_process_status(proc_shmid, getpid(), 0);
             printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished time slice, remaining: %d\n"ANSI_COLOR_WHITE,
                    getpid(), remaining);
         }
-        else
-        {
-            // Update status in shared memory
-            update_process_status(proc_shmid, getpid(), 0);
-            raise(SIGTSTP); // Signal process to stop itself
-        }
+        // else
+        // {
+        //     // // Update status in shared memory
+        //     // update_process_status(proc_shmid, getpid(), 0);
+        //     raise(SIGTSTP); // Signal process to stop itself
+        // }
     }
 
     // Finished execution
