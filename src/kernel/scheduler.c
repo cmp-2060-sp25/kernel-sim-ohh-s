@@ -4,14 +4,18 @@
 #include <stdlib.h>
 #include <sys/msg.h>
 #include <unistd.h>
+#include <sys/shm.h>
+
 #include "clk.h"
 #include "scheduler_utils.h"
 #include "min_heap.h"
 #include "queue.h"
 #include <sys/types.h>
 #include <sys/wait.h>
+#include "shared_mem.h"
 
 #include "headers.h"
+#include "colors.h"
 
 extern finishedProcessInfo** finished_process_info;
 // Use pointers for both possible queue types
@@ -23,6 +27,7 @@ extern int scheduler_type;
 extern int quantum;
 extern finishedProcessInfo** finished_process_info;
 extern int finished_processes_count;
+int process_shm_id = -1; // Shared memory ID
 
 void run_scheduler()
 {
@@ -32,167 +37,231 @@ void run_scheduler()
 
     if (init_scheduler() == -1)
     {
-        fprintf(stderr, "Failed to initialize scheduler\n");
+        fprintf(stderr, ANSI_COLOR_GREEN"[SCHEDULER] Failed to initialize scheduler\n"ANSI_COLOR_RESET);
         return;
     }
 
-    int crt_clk = get_clk();
-    int old_clk = -1;
-
     while (1)
     {
-        while ((crt_clk = get_clk()) == old_clk) usleep(1000);
-        old_clk = crt_clk;
-
         int receive_status = receive_processes();
         if (receive_status == -2 && !process_count)
         {
-            printf("Message queue has been closed. Terminating scheduler.\n");
+            printf(
+                ANSI_COLOR_GREEN"[SCHEDULER] Message queue has been closed. Terminating scheduler.\n"ANSI_COLOR_RESET);
             break; // Exit the scheduling loop
         }
+        receive_processes();
 
-        // --------- Scheduling Algorithm Dispatch ---------
+
         if (scheduler_type == HPF) // HPF
         {
+            int crt_clk = get_clk();
             running_process = hpf(min_heap_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
 
-            // Resume the process
-            kill(running_process->pid, SIGCONT);
-            printf("RUNNING PID %d\n", running_process->pid);
+            int time_slice = running_process->remaining_time;
 
-            // Polling loop to check if process still exists
-            pid_t rpid = running_process != NULL ? running_process->pid : -1;
-            do
+            // Write current clock as handshake
+            write_process_info(process_shm_id, running_process->pid, time_slice, 1, crt_clk);
+
+            running_process->remaining_time = 0;
+            pid_t p_pid = running_process->pid;
+            process_info_t process_info;
+
+            printf(ANSI_COLOR_GREEN"[SCHEDULER] RUNNING PID %d for %d units\n"ANSI_COLOR_RESET,
+                   running_process->pid, time_slice);
+            kill(running_process->pid, SIGCONT);
+
+            while ((process_info = read_process_info(process_shm_id, p_pid)).status)
             {
-                // Try sending signal 0 to process - this doesn't actually send a signal
-                // but checks if the process exists, and we have permission to send signals
-                if (kill(rpid, 0) < 0)
-                {
-                    if (errno == ESRCH)
-                    {
-                        // Process no longer exists
-                        printf("Process %d has terminated\n", rpid);
-                        break;
-                    }
-                }
-                usleep(1000); // 1ms
+                usleep(1);
                 receive_processes();
-                // Allow scheduler to receive messages during polling    receive_processes();
-                rpid = running_process != NULL ? rpid : -1;
             }
-            while (rpid != -1);
+
+            // Wait until the process is cleanedup
+            while (running_process != NULL)
+            {
+                usleep(1000);
+                receive_processes();
+            }
         }
+
         else if (scheduler_type == SRTN)
         {
             running_process = srtn(min_heap_queue);
             if (running_process == NULL) continue; // there is no process to run
+
+            pid_t p_pid = running_process->pid;
             int remaining_time = running_process->remaining_time;
-            kill(running_process->pid,SIGCONT);
-            int crt_time = get_clk();
-            int old_time = crt_time;
+            process_info_t process_info;
+            int ran = 0;
+            int preempt = 0;
 
-            short has_received = 0;
+            int crt_clk = get_clk();
+            // Write current clock as handshake
+            write_process_info(process_shm_id, running_process->pid, 1, 1, crt_clk);
 
-            while (remaining_time > 0 && !has_received)
+            printf(ANSI_COLOR_GREEN"[SCHEDULER] RUNNING PID %d for SRTN scheduling\n"ANSI_COLOR_RESET,
+                   running_process->pid);
+            kill(running_process->pid, SIGCONT);
+
+            // While the process has more time to run
+            while (ran < remaining_time)
             {
-                while ((crt_time = get_clk()) == old_time)
+                // Wait until the process finishes the time slice and during that check if any new process arrives
+                while (read_process_info(process_shm_id, p_pid).status != 0)
                 {
-                    usleep(1000);
-                    if (receive_processes() == 0) has_received = 1;
-                } // busy wait the scheduler for a clk
-                remaining_time -= crt_time - old_time;
-                old_time = crt_time;
+                    // Check if there are any newly arrived processes
+                    // If we received new processes and the min heap is not empty, check for preemption
+                    if (receive_processes() == 0 && !min_heap_is_empty(min_heap_queue))
+                    {
+                        PCB* shortest = (PCB*)min_heap_get_min(min_heap_queue);
+                        if (shortest && shortest->remaining_time < remaining_time - ran)
+                            // Preempt the current process
+                            preempt = 1;
+                    }
+                    usleep(1);
+                }
+
+                ran++;
+
+                if (running_process)
+                {
+                    // Process has more time to run
+                    if (remaining_time > ran)
+                    {
+                        // If the process needs to be prempted then break
+                        if (preempt) break;
+
+                        // else
+                        // Instruct process to run for another time unit
+                        write_process_info(process_shm_id, running_process->pid, 1, 1, get_clk());
+                        printf(
+                            ANSI_COLOR_GREEN"[SCHEDULER] PID %d continued for another unit. %d/%d completed\n"
+                            ANSI_COLOR_RESET,
+                            running_process->pid, ran, running_process->remaining_time);
+                    }
+                    else
+                    {
+                        // Process completed its current time slice
+                        printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d completed time slice\n"ANSI_COLOR_RESET,
+                               running_process->pid);
+                        break;
+                    }
+                }
+
+                usleep(1000); // Small sleep to prevent CPU hogging
             }
 
-            // If the child hasn't finished execution else it would be null
-            if (running_process != NULL)
+            // handle preempting and process still exists and there is still time left
+            if (preempt && running_process && (remaining_time - ran) > 0)
             {
-                if (remaining_time == 0)
+                // Update remaining time and reinsert into min heap
+                running_process->remaining_time -= ran;
+                running_process->last_run_time = get_clk();
+                running_process->status = READY;
+
+                log_process_state(running_process, "stopped", get_clk()); // Add explicit preemption log
+
+                // Update process status to paused
+                write_process_info(process_shm_id, running_process->pid, 0, 0, crt_clk);
+                kill(running_process->pid, SIGTSTP); // Stop the process
+
+                // Wait gracefully until the process reports that it stopped
+                while (read_process_info(process_shm_id, running_process->pid).status)
                 {
-                    pid_t rpid = running_process != NULL ? running_process->pid : -1;
-                    do
-                    {
-                        // Try sending signal 0 to process - this doesn't actually send a signal
-                        // but checks if the process exists, and we have permission to send signals
-                        if (kill(rpid, 0) < 0)
-                        {
-                            if (errno == ESRCH)
-                            {
-                                // Process no longer exists
-                                // printf("Process %d has terminated\n", rpid);
-                                break;
-                            }
-                        }
-                        usleep(1000); // 1ms
-                        receive_processes();
-                        // Allow scheduler to receive messages during polling    receive_processes();
-                        rpid = running_process != NULL ? rpid : -1;
-                    }
-                    while (rpid != -1);
+                    usleep(1000);
+                    receive_processes();
                 }
 
-                if (remaining_time > 0)
+                printf(
+                    ANSI_COLOR_GREEN
+                    "[SCHEDULER] PID %d preempted and reinserted into queue with %d units remaining\n"
+                    ANSI_COLOR_RESET,
+                    p_pid, running_process->remaining_time);
+
+                // Reinsert the process into the min heap
+                min_heap_insert(min_heap_queue, running_process);
+                running_process = NULL;
+            }
+            // The process finished running
+            else if ((remaining_time - ran) <= 0)
+            {
+                // Wait for the process to be cleaned up
+                while (running_process != NULL)
                 {
-                    printf("[SCHEDULER] SENDING SIGTSP TO %d\n", running_process->pid);
-                    kill(running_process->pid, SIGTSTP); // Pause the child for context switching
-
-                    // Wait for the process to actually stop
-                    while (1)
-                    {
-                        // Check if the lock file has been removed (indicating process is stopped)
-                        if (access("/tmp/process.lock", F_OK) != 0)
-                        {
-                            // Lock file doesn't exist, so process is stopped
-                            break;
-                        }
-                        usleep(1); // Small delay before checking again
-                    }
-
-                    running_process->status = READY;
-                    running_process->remaining_time -= crt_time - old_time;
-                    running_process->last_run_time = crt_time;
-                    min_heap_insert(min_heap_queue, running_process);
-                    running_process = NULL;
+                    usleep(1000);
+                    receive_processes();
                 }
+                printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid);
             }
         }
         else if (scheduler_type == RR)
         {
+            int crt_clk = get_clk();
             running_process = rr(rr_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
-            kill(running_process->pid,SIGCONT);
-            int crt_time = get_clk();
-            int time_to_run = (running_process->remaining_time < quantum)
-                                  ? running_process->remaining_time
-                                  : quantum;
-            int end_time = crt_time + time_to_run;
-            while ((crt_time = get_clk()) < end_time); // busy wait the scheduler for a quantum
-            kill(running_process->pid,SIGTSTP); // Pause the child for context switching
-            running_process->status = READY;
-            running_process->remaining_time -= time_to_run;
-            running_process->last_run_time = crt_time;
-            if (running_process->remaining_time)
-                enqueue(rr_queue, running_process);
-            else
+
+            int remaining_time = running_process->remaining_time;
+            int time_slice = (remaining_time < quantum) ? remaining_time : quantum;
+            pid_t p_pid = running_process->pid;
+
+            // Write current clock as handshake
+            write_process_info(process_shm_id, running_process->pid, time_slice, 1, crt_clk);
+
+            printf(ANSI_COLOR_GREEN"[SCHEDULER] Running PID %d for %d units (RR)\n"ANSI_COLOR_RESET,
+                   running_process->pid, time_slice);
+
+            // Continue the process
+            kill(running_process->pid, SIGCONT);
+
+            // Wait for the process to finish its time slice
+            while (read_process_info(process_shm_id, p_pid).status)
             {
-                running_process->status = TERMINATED;
-                running_process->finish_time = crt_time;
-                running_process->waiting_time = (running_process->finish_time - running_process->arrival_time) -
-                    running_process->runtime;
-                running_process->turnaround_time = running_process->finish_time - running_process->arrival_time;
-                running_process->weighted_turnaround = (float)running_process->turnaround_time / running_process->
-                    runtime;
-                log_process_state(running_process, "finished", get_clk());
+                usleep(1000);
+                receive_processes(); // Check for new arrivals while waiting
             }
-        }
-        else
-        {
-            fprintf(stderr, "Unknown scheduler_type: %d\n", scheduler_type);
-            exit(EXIT_FAILURE);
+
+            if (running_process != NULL)
+            {
+                // Update process accounting
+                remaining_time -= time_slice;
+                running_process->last_run_time = get_clk();
+
+                printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d finished time slice. Remaining time: %d\n"ANSI_COLOR_RESET,
+                       running_process->pid, remaining_time);
+
+                if (remaining_time <= 0)
+                {
+                    // Wait for the process to be cleaned up
+                    while (running_process != NULL)
+                    {
+                        usleep(1000);
+                        receive_processes();
+                    }
+
+                    printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid);
+                }
+                else
+                {
+                    // Process still has time remaining, put it back in the queue
+                    running_process->status = READY;
+                    running_process->remaining_time = remaining_time;
+                    
+                    log_process_state(running_process, "blocked", get_clk()); // Add log when process is blocked
+                    
+                    enqueue(rr_queue, running_process);
+                    running_process = NULL;
+
+                    printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d re-enqueued with %d units remaining\n"ANSI_COLOR_RESET,
+                           p_pid, remaining_time);
+                }
+            }
+            else { printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid); }
         }
     }
-    // Must Be called before the clock is destoryed !!!
+
+    // Must Be called before the clock is destroyed !!!
     generate_statistics();
     destroy_clk(1);
     exit(0);
@@ -214,7 +283,7 @@ int receive_processes(void)
         {
             // EIDRM: Queue was removed
             // EINVAL: Invalid queue ID (queue no longer exists)
-            // printf("Message queue has been closed or removed\n");
+            // printf("[SCHEDULER] Message queue has been closed or removed\n");
             return -2; // Special return value to indicate queue closure
         }
         else
@@ -226,8 +295,10 @@ int receive_processes(void)
 
     while (recv_val != -1)
     {
-        printf("Received process ID: %d, arrival time: %d, remaining_time: %d at %d\n",
-               received_pcb.pid, received_pcb.arrival_time, received_pcb.remaining_time, get_clk());
+        printf(
+            ANSI_COLOR_GREEN"[SCHEDULER] Received process ID: %d, arrival time: %d, remaining_time: %d at %d\n"
+            ANSI_COLOR_RESET,
+            received_pcb.pid, received_pcb.arrival_time, received_pcb.remaining_time, get_clk());
 
         PCB* new_pcb = (PCB*)malloc(sizeof(PCB));
         if (!new_pcb)
@@ -243,11 +314,11 @@ int receive_processes(void)
             enqueue(rr_queue, new_pcb);
 
         process_count++;
-        recv_val = msgrcv(msgid, &received_pcb, sizeof(PCB) - sizeof(long), 1, IPC_NOWAIT);
+        recv_val = msgrcv(msgid, &received_pcb, sizeof(PCB), 1, IPC_NOWAIT);
 
         if (recv_val == -1 && (errno == EIDRM || errno == EINVAL))
         {
-            printf("Message queue has been closed or removed during processing\n");
+            printf("[SCHEDULER] Message queue has been closed or removed during processing\n");
             return -2; // Queue was removed during processing
         }
     }
@@ -257,13 +328,17 @@ int receive_processes(void)
 
 void scheduler_cleanup(int signum)
 {
-    printf("[SCHEDULER] scheduler_cleanup CALLED\n");
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] scheduler_cleanup CALLED\n"ANSI_COLOR_RESET);
 
     if (log_file)
     {
         fclose(log_file);
         log_file = NULL;
     }
+
+    // Clean up shared memory
+    cleanup_shared_memory(process_shm_id);
+    process_shm_id = -1;
 
     // Cleanup memory resources if they still exist
     if (min_heap_queue)
@@ -317,12 +392,12 @@ void scheduler_cleanup(int signum)
         finished_process_info = NULL;
     }
 
-    printf("[SCHEDULER] scheduler_cleanup FINISHED \n");
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] scheduler_cleanup FINISHED \n"ANSI_COLOR_RESET);
 
-    if (signum != 0)
-    {
-        exit(signum);
-    }
+    // if (signum != 0)
+    // {
+    exit(0);
+    // }
 }
 
 void child_cleanup()
@@ -331,12 +406,13 @@ void child_cleanup()
 
     sync_clk();
     signal(SIGCHLD, child_cleanup);
-    printf("[SCHEDULER] CHILD_CLEANUP CALLED\n");
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] CHILD_CLEANUP CALLED\n"ANSI_COLOR_RESET);
 
     if (running_process)
     {
         int current_time = get_clk();
         running_process->finish_time = current_time;
+        running_process->remaining_time = 0;
         log_process_state(running_process, "finished", current_time);
         if (finished_processes_count < MAX_INPUT_PROCESSES)
         {
@@ -364,7 +440,7 @@ void child_cleanup()
         }
         else
         {
-            printf("WARNING: Exceeded maximum number of processes!\n");
+            printf(ANSI_COLOR_GREEN"[SCHEDULER] WARNING: Exceeded maximum number of processes!\n"ANSI_COLOR_RESET);
         }
 
         free(running_process);
@@ -372,9 +448,9 @@ void child_cleanup()
     }
     else
     {
-        printf("Requested to cleanup none????\n");
+        printf("[SCHEDULER] Requested to cleanup none????\n");
     }
-    printf("[SCHEDULER] CHILD_CLEANUP FINISHED\n");
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] CHILD_CLEANUP FINISHED\n"ANSI_COLOR_RESET);
 }
 
 int init_scheduler()
@@ -382,6 +458,14 @@ int init_scheduler()
     int current_time = get_clk();
     process_count = 0;
     running_process = NULL;
+
+    // Initialize shared memory
+    process_shm_id = create_shared_memory(SHM_KEY);
+    if (process_shm_id == -1)
+    {
+        perror("Failed to create shared memory");
+        return -1;
+    }
 
     if (scheduler_type == HPF || scheduler_type == SRTN)
     {
@@ -400,7 +484,7 @@ int init_scheduler()
             perror("Failed to allocate memory for rr_queue");
             return -1;
         }
-        initQueue(rr_queue, sizeof(PCB*));
+        initQueue(rr_queue, sizeof(PCB));
     }
 
     // Init IPC
@@ -433,6 +517,7 @@ int init_scheduler()
     for (int i = 0; i < MAX_INPUT_PROCESSES; i++)
         finished_process_info[i] = NULL;
 
-    printf("Scheduler initialized successfully at time %d\n", current_time);
+    printf(ANSI_COLOR_GREEN"[SCHEDULER] Scheduler initialized successfully at time %d\n"ANSI_COLOR_RESET,
+           current_time);
     return 0;
 }

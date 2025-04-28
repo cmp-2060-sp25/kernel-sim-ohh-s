@@ -10,6 +10,8 @@
 #include "headers.h"
 #include "min_heap.h"
 #include "process_generator.h"
+#include "colors.h"
+#include "shared_mem.h"
 extern int scheduler_type;
 extern finishedProcessInfo** finished_process_info;
 extern int finished_processes_count;
@@ -136,7 +138,7 @@ PCB* rr(Queue* ready_queue, int current_time)
     return NULL;
 }
 
-// Log process state changes
+// Update log_process_state to handle more states
 void log_process_state(PCB* process, char* state, int time)
 {
     if (strcmp(state, "started") == 0)
@@ -144,6 +146,9 @@ void log_process_state(PCB* process, char* state, int time)
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
                 time, process->pid, state, process->arrival_time, process->runtime,
                 process->remaining_time, process->waiting_time);
+        
+        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d started at time %d\n"ANSI_COLOR_RESET,
+               process->pid, time);
     }
     else if (strcmp(state, "finished") == 0)
     {
@@ -152,6 +157,27 @@ void log_process_state(PCB* process, char* state, int time)
                 0, process->waiting_time,
                 (time - process->arrival_time), // Turnaround time
                 (float)(time - process->arrival_time) / process->runtime); // Weighted turnaround time
+        
+        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d finished at time %d\n"ANSI_COLOR_RESET,
+               process->pid, time);
+    }
+    else if (strcmp(state, "resumed") == 0)
+    {
+        fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
+                time, process->pid, state, process->arrival_time, process->runtime,
+                process->remaining_time, process->waiting_time);
+                
+        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d resumed at time %d\n"ANSI_COLOR_RESET,
+               process->pid, time);
+    }
+    else if (strcmp(state, "preempted") == 0 || strcmp(state, "blocked") == 0)
+    {
+        fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
+                time, process->pid, state, process->arrival_time, process->runtime,
+                process->remaining_time, process->waiting_time);
+                
+        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d %s at time %d\n"ANSI_COLOR_RESET,
+               process->pid, state, time);
     }
     else
     {
@@ -194,7 +220,7 @@ void generate_statistics()
         // Check if the pointer is valid
         if (finished_process_info[i] == NULL)
         {
-            fprintf(stderr, "Error: finished_process_info[%d] is NULL\n", i);
+            fprintf(stderr, "[SCHEDULER] Error: finished_process_info[%d] is NULL\n", i);
             continue; // Skip this iteration
         }
 
@@ -206,7 +232,7 @@ void generate_statistics()
         wta_values[i] = (float*)malloc(sizeof(float));
         if (!wta_values[i])
         {
-            fprintf(stderr, "Failed to allocate memory for wta_values[%d]\n", i);
+            fprintf(stderr, "[SCHEDULER] Failed to allocate memory for wta_values[%d]\n", i);
             continue;
         }
         *wta_values[i] = finished_process_info[i]->wta;

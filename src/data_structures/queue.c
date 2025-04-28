@@ -13,6 +13,10 @@ void enqueue(Queue* q, void* item) {
 }
 
 void* dequeue(Queue* q) {
+    if (isQueueEmpty(q)) {
+        fprintf(stderr, "Error: Attempt to dequeue from an empty queue\n");
+        return NULL;
+    }
     return removeFront(&q->list);
 }
 
@@ -22,4 +26,8 @@ void* peekQueue(Queue* q) {
 
 void clearQueue(Queue* q) {
     clearList(&q->list);
+}
+
+int getQueueSize(Queue* q) {
+    return q->list.size;
 }

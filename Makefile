@@ -28,7 +28,7 @@ INC_FLAGS := $(addprefix -I,$(INC_DIRS)) -g
 
 # Compiler flags
 CPPFLAGS := $(INC_FLAGS) -MMD -MP
-LDFLAGS := -lreadline
+#LDFLAGS := -lreadline
 
 # Default target builds everything
 all: kernel process

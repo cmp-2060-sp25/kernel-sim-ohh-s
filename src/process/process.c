@@ -3,146 +3,111 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
+#include <sys/shm.h>
 #include "clk.h"
+#include "colors.h"
+#include "shared_mem.h"
 
-#define LOCK_FILE "/tmp/process.lock"
 pid_t process_generator_pid;
+int proc_shmid = -1;
 
-void sigIntHandler(int signum)
-{
-    printf("Process %d received SIGINT. Terminating...\n", getpid());
-    // Check if the lock file contains the current process's PID
-    int lock_fd = open(LOCK_FILE, O_RDONLY);
-    if (lock_fd != -1)
-    {
-        char pid_buffer[16];
-        ssize_t bytes_read = read(lock_fd, pid_buffer, sizeof(pid_buffer) - 1);
-        if (bytes_read > 0)
-        {
-            pid_buffer[bytes_read] = '\0'; // Null-terminate the string
-            pid_t lock_pid = (pid_t)atoi(pid_buffer);
-            if (lock_pid == getpid())
-            {
-                unlink(LOCK_FILE); // Only unlink if the PID matches
-            }
-        }
-        close(lock_fd);
-    }
-    destroy_clk(0);
-    exit(0);
-}
-
-void sigStpHandler(int signum)
-{
-    // Check if the lock file contains the current process's PID
-    int lock_fd = open(LOCK_FILE, O_RDONLY);
-    if (lock_fd != -1)
-    {
-        char pid_buffer[16];
-        ssize_t bytes_read = read(lock_fd, pid_buffer, sizeof(pid_buffer) - 1);
-        if (bytes_read > 0)
-        {
-            pid_buffer[bytes_read] = '\0'; // Null-terminate the string
-            pid_t lock_pid = (pid_t)atoi(pid_buffer);
-            if (lock_pid == getpid())
-            {
-                unlink(LOCK_FILE); // Only unlink if the PID matches
-                printf("Process %d received SIGTSTP. Pausing...\n", getpid());
-            }
-        }
-        close(lock_fd);
-    }
-    pause();
-    signal(SIGTSTP, sigStpHandler);
-}
-
-void sigContHandler(int signum)
-{
-    int lock_fd = open(LOCK_FILE, O_CREAT | O_EXCL | O_WRONLY, 0644);
-    if (lock_fd == -1)
-    {
-        if (errno == EEXIST)
-        {
-            fprintf(stderr, "Error: Another instance of the process is already running.\n");
-            kill(getpid(),SIGTSTP);
-            return;
-        }
-        else
-        {
-            perror("Error creating lock file");
-            kill(getpid(),SIGTSTP);
-            return;
-        }
-    }
-
-    // Write the current process's PID to the lock file
-    char pid_buffer[16];
-    snprintf(pid_buffer, sizeof(pid_buffer), "%d\n", getpid());
-    write(lock_fd, pid_buffer, strlen(pid_buffer));
-    close(lock_fd);
-
-    printf("Process %d received SIGCONT. Resuming...\n", getpid());
-    signal(SIGCONT, sigContHandler);
-}
 
 void run_process(int runtime)
 {
-    sync_clk();
-    int start_time = get_clk(); // Get the current clock time
-    int current_time = start_time; // Get the updated clock time
-
-    while (runtime > 0)
+    // Get shared memory ID
+    proc_shmid = shmget(SHM_KEY, sizeof(process_info_t), 0666);
+    if (proc_shmid == -1)
     {
-        while ((start_time = get_clk()) == current_time)
-            usleep(1000); // 10us
-        runtime -= (start_time - current_time); // Decrement runtime
-        current_time = start_time;
-        printf("Process %d running. Remaining time: %d seconds.\n", getpid(), runtime);
+        perror("[PROCESS] Error getting shared memory");
+        proc_shmid = -1;
     }
 
-    kill(process_generator_pid,SIGCHLD);
-    printf("Sending SIGCHILD to: %d\n", process_generator_pid);
-    printf("Process %d finished execution.\n", getpid());
+    // Sync clock before any get_clk() usage!
+    sync_clk();
+
+    // Make the process wait when spawned until it is told to run
+    while (!get_process_status(proc_shmid))
+        usleep(1);
+
+    printf("[PROCESS] %d Woke Up For The First Time\n", getpid());
+    printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d started with runtime %d seconds.\n"ANSI_COLOR_WHITE, getpid(),
+           runtime);
+    int remaining = runtime;
+
+    while (remaining > 0)
+    {
+        // Continuously check status from shared memory
+        // If status is 1 and current_clk matches, run the process
+        if (get_process_status(proc_shmid) && get_process_info(proc_shmid).current_clk == get_clk())
+        {
+            int time_to_run = 0;
+            while (time_to_run <= 0)
+            {
+                time_to_run = get_time_to_run(proc_shmid, getpid());
+                usleep(1000);
+            }
+            if (time_to_run > remaining)
+                time_to_run = remaining;
+
+            printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d will run for %d units (remaining: %d)\n"ANSI_COLOR_WHITE,
+                   getpid(), time_to_run, remaining);
+
+            int start_time = get_clk();
+            int elapsed = 0;
+
+            // At each tick, check handshake and status
+            while (elapsed < time_to_run)
+            {
+                int now = get_clk();
+                if (now != start_time)
+                {
+                    printf(
+                        ANSI_COLOR_YELLOW
+                        "[PROCESS] PID %d ran for 1 second. Remaining: %d, Remaining in slice: %d\n"
+                        ANSI_COLOR_WHITE,
+                        getpid(), remaining - elapsed - 1, time_to_run - elapsed - 1);
+                    elapsed++;
+                    start_time = now;
+                }
+                usleep(1000);
+            }
+
+            // Update remaining time
+            remaining -= elapsed;
+            update_process_status(proc_shmid, getpid(), 0);
+            printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished time slice, remaining: %d\n"ANSI_COLOR_WHITE,
+                   getpid(), remaining);
+        }
+        else if (remaining > 0 && get_process_status(proc_shmid) && get_process_info(proc_shmid).current_clk !=
+            get_clk())
+        {
+            // Update status in shared memory
+            update_process_status(proc_shmid, getpid(), 0);
+            raise(SIGTSTP); // Signal process to stop itself
+        }
+        else
+            usleep(1000); // Wait before checking status again
+    }
+
+    // Finished execution
+    update_process_status(proc_shmid, getpid(), 0);
+    kill(process_generator_pid, SIGCHLD);
+    printf(ANSI_COLOR_YELLOW"[PROCESS] Sending SIGCHLD to: %d\n"ANSI_COLOR_WHITE, process_generator_pid);
+    printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished execution.\n"ANSI_COLOR_WHITE, getpid());
     destroy_clk(0);
 }
 
-
 int main(int argc, char* argv[])
 {
-    signal(SIGTSTP, sigStpHandler);
     signal(SIGINT, sigIntHandler);
     signal(SIGCONT, sigContHandler);
-
-    // Create a lock file to ensure only one instance is running
-    int lock_fd = open(LOCK_FILE, O_CREAT | O_EXCL | O_RDWR, 0644);
-    if (lock_fd == -1)
-    {
-        if (errno == EEXIST)
-        {
-            fprintf(stderr, "Error: Another instance of the process is already running.\n");
-            return 1;
-        }
-        else
-        {
-            perror("Error creating lock file");
-            return 1;
-        }
-    }
-
-    // Write the current PID to the lock file
-    ftruncate(lock_fd, 0);
-    char pid_str[16];
-    snprintf(pid_str, sizeof(pid_str), "%d\n", getpid());
-    write(lock_fd, pid_str, strlen(pid_str));
+    signal(SIGTSTP, sigStpHandler);
 
     if (argc < 3)
     {
         fprintf(stderr, "Usage: %s <runtime> <process_generator_pid>\n", argv[0]);
-        unlink(LOCK_FILE); // Remove the lock file
-        close(lock_fd);
         return 1;
     }
 
@@ -155,14 +120,123 @@ int main(int argc, char* argv[])
             fprintf(stderr, "Runtime must be a positive integer.\n");
         else
             fprintf(stderr, "process_generator_pid must be a positive integer.\n");
-        unlink(LOCK_FILE); // Remove the lock file
-        close(lock_fd);
         return 1;
     }
 
-    printf("Process %d started with runtime %d seconds.\n", getpid(), runtime);
     run_process(runtime);
-    unlink(LOCK_FILE); // Remove the lock file when the process finishes
-    close(lock_fd);
     return 0;
+}
+
+
+
+void sigIntHandler(int signum)
+{
+    printf(ANSI_COLOR_YELLOW "[PROCESS] Process %d received SIGINT. Terminating...\n"ANSI_COLOR_WHITE, getpid());
+    destroy_clk(0);
+    exit(0);
+}
+
+void sigStpHandler(int signum)
+{
+    // Update status in shared memory to not running
+    update_process_status(proc_shmid, getpid(), 0);
+    printf(ANSI_COLOR_YELLOW "[PROCESS] Process %d stopped.\n"ANSI_COLOR_WHITE, getpid());
+
+    pause();
+    signal(SIGTSTP, sigStpHandler);
+}
+
+void sigContHandler(int signum)
+{
+    // Uncomment this for more explicit resume logging
+    printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d received SIGCONT. Resuming...\n"ANSI_COLOR_WHITE, getpid());
+
+    // Update status in shared memory to running
+    update_process_status(proc_shmid, getpid(), 1);
+
+    signal(SIGCONT, sigContHandler);
+}
+
+process_info_t get_process_info(int proc_shmid)
+{
+    process_info_t process_info = {.status = -1, .pid = -1, .time_to_run = -1, .current_clk = -1};
+
+    if (proc_shmid == -1) return process_info;
+    process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
+    if ((void*)shm == (void*)-1)
+    {
+        perror("Error attaching shared memory in process");
+        return process_info;
+    }
+
+    if (shm->pid == getpid())
+    {
+        process_info.time_to_run = shm->time_to_run;
+        process_info.status = shm->status;
+        process_info.pid = shm->pid;
+        process_info.current_clk = shm->current_clk;
+        shmdt(shm);
+        return process_info;
+    }
+
+    shmdt(shm);
+    return process_info;
+}
+
+int get_time_to_run(int proc_shmid, pid_t pid)
+{
+    if (proc_shmid == -1) return -1;
+    process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
+    if ((void*)shm == (void*)-1)
+    {
+        perror("Error attaching shared memory in process");
+        return -1;
+    }
+    int remaining_time = -1;
+    int status = 0;
+    if (shm->pid == pid && shm->status == 1 && shm->current_clk == get_clk())
+    {
+        remaining_time = shm->time_to_run;
+        status = shm->status;
+    }
+    else
+    {
+        // Process is not running, return -1
+        remaining_time = -1;
+    }
+
+    shmdt(shm);
+    return status ? remaining_time : -1;
+}
+
+int get_process_status(int proc_shmid)
+{
+    if (proc_shmid == -1) return 0;
+    process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
+    if ((void*)shm == (void*)-1)
+    {
+        perror("Error attaching shared memory in process");
+        return 0;
+    }
+
+    int status = 0;
+    if (shm->pid == getpid() && shm->current_clk == get_clk())
+    {
+        status = shm->status;
+    }
+
+    shmdt(shm);
+    return status;
+}
+
+void update_process_status(int proc_shmid, pid_t pid, int status)
+{
+    if (proc_shmid == -1) return;
+    process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
+    if ((void*)shm == (void*)-1) return;
+
+    if (shm->pid == pid)
+        shm->status = status;
+
+    shmdt(shm);
 }

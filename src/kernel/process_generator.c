@@ -10,8 +10,10 @@
 #include "process_generator.h"
 #include <string.h>
 #include <sys/wait.h>
+#include "colors.h"
 
 #include "scheduler.h"
+#include <bits/getopt_core.h>
 int scheduler_type = -1; // Default invalid value
 char* process_file = "processes.txt"; // Default filename
 int quantum = 2; // Default quantum value
@@ -48,15 +50,15 @@ int main(int argc, char* argv[])
                 fprintf(stderr, "Valid options are: rr, hpf, srtn\n");
                 exit(EXIT_FAILURE);
             }
-            printf("Using scheduler: %s\n", optarg);
+            printf(ANSI_COLOR_MAGENTA"[MAIN] Using scheduler: %s\n"ANSI_COLOR_RESET, optarg);
             break;
         case 'f':
             process_file = optarg;
-            printf("[MAIN] Reading processes from: %s\n", process_file);
+            printf(ANSI_COLOR_MAGENTA"[MAIN] Reading processes from: %s\n"ANSI_COLOR_RESET, process_file);
             break;
         case 'q':
             quantum = atoi(optarg);
-            printf("[MAIN] Quantum set to: %d\n", quantum);
+            printf(ANSI_COLOR_MAGENTA"[MAIN] Quantum set to: %d\n"ANSI_COLOR_RESET, quantum);
             break;
         default:
             fprintf(stderr, "Usage: %s -s <scheduling-algorithm> -f <processes-text-file> [-q <quantum>]\n", argv[0]);
@@ -114,8 +116,6 @@ int main(int argc, char* argv[])
                     usleep(1); // 1us sleep;
                 old_clk = crt_clk;
 
-                printf("current time is %d\n", crt_clk);
-
                 int messages_sent = 0;
                 // Check the process_parameters[] for processes whose arrival time == crt_clk, and fork/send them
                 for (int i = 0; i < process_count; i++)
@@ -138,7 +138,7 @@ int main(int argc, char* argv[])
                         else if (pid > 0)
                         {
                             process_parameters[i]->pid = pid;
-                            kill(pid, SIGTSTP); // Immediately stop the child process
+                            // kill(pid, SIGTSTP); // Immediately stop the child process
                         }
                         else
                         {
@@ -169,10 +169,10 @@ int main(int argc, char* argv[])
                 }
 
                 if (messages_sent > 0)
-                    printf("Sent %d message(s) to scheduler\n", messages_sent);
+                    printf(ANSI_COLOR_MAGENTA"[MAIN] Sent %d message(s) to scheduler\n"ANSI_COLOR_RESET, messages_sent);
             }
 
-            printf("All processes have been sent, exiting...\n");
+            printf(ANSI_COLOR_MAGENTA"[MAIN] All processes have been sent, exiting...\n"ANSI_COLOR_RESET);
             process_generator_cleanup(0);
             exit(0);
         }
@@ -186,7 +186,7 @@ int main(int argc, char* argv[])
     }
     else
     {
-        printf("[MAIN] Running Scheduler with pid: %d\n", getpid());
+        printf(ANSI_COLOR_MAGENTA"[MAIN] Running Scheduler with pid: %d\n"ANSI_COLOR_RESET, getpid());
         run_scheduler();
     }
 
@@ -203,7 +203,7 @@ processParameters** read_process_file(const char* filename, int* count)
 
     if (!file)
     {
-        perror("[MAIN] Error opening file");
+        perror(ANSI_COLOR_MAGENTA"[MAIN] Error opening file"ANSI_COLOR_RESET);
         exit(1);
     }
 
@@ -267,7 +267,7 @@ processParameters** read_process_file(const char* filename, int* count)
 
     fclose(file);
 
-    printf("Read %d processes from file\n", index);
+    printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Read %d processes from file\n"ANSI_COLOR_RESET, index);
 
     return process_messages;
 }
@@ -280,7 +280,8 @@ void child_process_handler(int signum)
     // Reap all terminated children
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
     {
-        printf("[PROC_GENERATOR] Cleaned up child process PID: %d\n", pid);
+        printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Acknowledged that child process PID: %d has died.\n"ANSI_COLOR_RESET,
+               pid);
     }
 }
 
@@ -318,12 +319,13 @@ void process_generator_cleanup(int signum)
             // If no messages are left in the queue, we can safely remove it
             if (queue_info.msg_qnum == 0)
             {
-                printf("[PROC_GENERATOR] Message queue is empty, removing it\n");
+                printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Message queue is empty, removing it\n"ANSI_COLOR_RESET);
                 break;
             }
 
-            printf("[PROC_GENERATOR] Waiting for queue to empty: %ld messages remaining\n",
-                   queue_info.msg_qnum);
+            printf(
+                ANSI_COLOR_BLUE"[PROC_GENERATOR] Waiting for queue to empty: %ld messages remaining\n"ANSI_COLOR_RESET,
+                queue_info.msg_qnum);
             usleep(100000); // Sleep for 100ms before checking again
         }
 
@@ -334,12 +336,12 @@ void process_generator_cleanup(int signum)
         }
         else
         {
-            printf("[PROC_GENERATOR] Message queue removed successfully\n");
+            printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Message queue removed successfully\n"ANSI_COLOR_RESET);
         }
     }
 
     destroy_clk(0);
-    printf("[PROC_GENERATOR] Resources cleaned up\n");
+    printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Resources cleaned up\n"ANSI_COLOR_RESET);
 
     if (signum != 0)
     {
