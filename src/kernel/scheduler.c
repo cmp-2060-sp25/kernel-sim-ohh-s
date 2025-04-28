@@ -161,7 +161,7 @@ void run_scheduler()
                 running_process->last_run_time = get_clk();
                 running_process->status = READY;
 
-                log_process_state(running_process, "preempted", get_clk()); // Add explicit preemption log
+                log_process_state(running_process, "stopped", get_clk()); // Add explicit preemption log
 
                 // Update process status to paused
                 write_process_info(process_shm_id, running_process->pid, 0, 0, crt_clk);
