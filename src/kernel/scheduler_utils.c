@@ -138,7 +138,7 @@ PCB* rr(Queue* ready_queue, int current_time)
     return NULL;
 }
 
-// Log process state changes
+// Update log_process_state to handle more states
 void log_process_state(PCB* process, char* state, int time)
 {
     if (strcmp(state, "started") == 0)
@@ -146,6 +146,9 @@ void log_process_state(PCB* process, char* state, int time)
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
                 time, process->pid, state, process->arrival_time, process->runtime,
                 process->remaining_time, process->waiting_time);
+        
+        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d started at time %d\n"ANSI_COLOR_RESET,
+               process->pid, time);
     }
     else if (strcmp(state, "finished") == 0)
     {
@@ -154,6 +157,27 @@ void log_process_state(PCB* process, char* state, int time)
                 0, process->waiting_time,
                 (time - process->arrival_time), // Turnaround time
                 (float)(time - process->arrival_time) / process->runtime); // Weighted turnaround time
+        
+        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d finished at time %d\n"ANSI_COLOR_RESET,
+               process->pid, time);
+    }
+    else if (strcmp(state, "resumed") == 0)
+    {
+        fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
+                time, process->pid, state, process->arrival_time, process->runtime,
+                process->remaining_time, process->waiting_time);
+                
+        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d resumed at time %d\n"ANSI_COLOR_RESET,
+               process->pid, time);
+    }
+    else if (strcmp(state, "preempted") == 0 || strcmp(state, "blocked") == 0)
+    {
+        fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d\n",
+                time, process->pid, state, process->arrival_time, process->runtime,
+                process->remaining_time, process->waiting_time);
+                
+        printf(ANSI_COLOR_GREEN"[SCHEDULER] Process %d %s at time %d\n"ANSI_COLOR_RESET,
+               process->pid, state, time);
     }
     else
     {

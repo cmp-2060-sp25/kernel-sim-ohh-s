@@ -161,6 +161,8 @@ void run_scheduler()
                 running_process->last_run_time = get_clk();
                 running_process->status = READY;
 
+                log_process_state(running_process, "preempted", get_clk()); // Add explicit preemption log
+
                 // Update process status to paused
                 write_process_info(process_shm_id, running_process->pid, 0, 0, crt_clk);
                 kill(running_process->pid, SIGTSTP); // Stop the process
@@ -200,7 +202,8 @@ void run_scheduler()
             running_process = rr(rr_queue, crt_clk);
             if (running_process == NULL) continue; // there is no process to run
 
-            int time_slice = (running_process->remaining_time < quantum) ? running_process->remaining_time : quantum;
+            int remaining_time = running_process->remaining_time;
+            int time_slice = (remaining_time < quantum) ? remaining_time : quantum;
             pid_t p_pid = running_process->pid;
 
             // Write current clock as handshake
@@ -210,57 +213,55 @@ void run_scheduler()
                    running_process->pid, time_slice);
 
             // Continue the process
-            if (kill(running_process->pid, SIGCONT) < 0)
-                fprintf(stderr, ANSI_COLOR_RED"[SCHEDULER] Failed to send SIGCONT to PID %d: %s\n"ANSI_COLOR_RESET,
-                        running_process->pid, strerror(errno));
+            kill(running_process->pid, SIGCONT);
 
             // Wait for the process to finish its time slice
-            process_info_t process_info;
-            do
+            while (read_process_info(process_shm_id, p_pid).status)
             {
-                process_info = read_process_info(process_shm_id, p_pid);
                 usleep(1000);
                 receive_processes(); // Check for new arrivals while waiting
             }
-            while (process_info.status == 1);
 
-            // Update process accounting
-            running_process->remaining_time -= time_slice;
-            running_process->last_run_time = get_clk();
-
-            printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d finished time slice. Remaining time: %d\n"ANSI_COLOR_RESET,
-                   running_process->pid, running_process->remaining_time);
-
-            if (running_process->remaining_time <= 0)
+            if (running_process != NULL)
             {
-                if (running_process)
-                {
-                    // Process has completed
-                    write_process_info(process_shm_id, running_process->pid, 0, 0, 0);
-                }
-                // Wait for the process to be cleaned up
-                while (running_process != NULL)
-                {
-                    usleep(1000);
-                    receive_processes();
-                }
+                // Update process accounting
+                remaining_time -= time_slice;
+                running_process->last_run_time = get_clk();
 
-                printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid);
-            }
-            else
-            {
-                // Process still has time remaining, put it back in the queue
-                running_process->status = READY;
-                enqueue(rr_queue, running_process);
-                running_process = NULL;
+                printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d finished time slice. Remaining time: %d\n"ANSI_COLOR_RESET,
+                       running_process->pid, remaining_time);
 
-                printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d re-enqueued with %d units remaining\n"ANSI_COLOR_RESET,
-                       p_pid, running_process->remaining_time);
+                if (remaining_time <= 0)
+                {
+                    // Wait for the process to be cleaned up
+                    while (running_process != NULL)
+                    {
+                        usleep(1000);
+                        receive_processes();
+                    }
+
+                    printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid);
+                }
+                else
+                {
+                    // Process still has time remaining, put it back in the queue
+                    running_process->status = READY;
+                    running_process->remaining_time = remaining_time;
+                    
+                    log_process_state(running_process, "blocked", get_clk()); // Add log when process is blocked
+                    
+                    enqueue(rr_queue, running_process);
+                    running_process = NULL;
+
+                    printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d re-enqueued with %d units remaining\n"ANSI_COLOR_RESET,
+                           p_pid, remaining_time);
+                }
             }
+            else { printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid); }
         }
     }
 
-    // Must Be called before the clock is destoryed !!!
+    // Must Be called before the clock is destroyed !!!
     generate_statistics();
     destroy_clk(1);
     exit(0);
