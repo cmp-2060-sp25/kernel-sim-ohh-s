@@ -124,7 +124,7 @@ void log_process_state(PCB* process, char* state, int time)
     {
         fprintf(log_file, "At time %d process %d %s arr %d total %d remain %d wait %d TA %d WTA %.2f\n",
             time, process->pid, state, process->arrival_time, process->runtime,
-            0, process->waiting_time,
+            process->remaining_time, process->waiting_time,
             (time - process->arrival_time), /* Turnaround time */
             (process->runtime > 0) ? ((float)(time - process->arrival_time) / process->runtime) : 0.0); /* Weighted turnaround time */
 
