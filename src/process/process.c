@@ -48,7 +48,6 @@ void run_process(int runtime)
             while (time_to_run <= 0)
             {
                 time_to_run = get_time_to_run(proc_shmid, getpid());
-                usleep(1000);
             }
             if (time_to_run > remaining)
                 time_to_run = remaining;

@@ -112,8 +112,7 @@ int main(int argc, char* argv[])
             {
                 // 0 1 2 3 4
                 // Ensure that we move by increments of 1
-                while ((crt_clk = get_clk()) - old_clk == 0)
-                    usleep(1); // 1us sleep;
+                while ((crt_clk = get_clk()) - old_clk == 0);
                 old_clk = crt_clk;
 
                 int messages_sent = 0;
