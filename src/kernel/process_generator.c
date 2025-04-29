@@ -335,7 +335,6 @@ void process_generator_cleanup(int signum)
                     ANSI_COLOR_BLUE"[PROC_GENERATOR] Waiting for queue to empty: %ld messages remaining\n"
                     ANSI_COLOR_RESET,
                     queue_info.msg_qnum);
-            usleep(100000); // Sleep for 100ms before checking again
         }
 
         // remove the message queue if still exists

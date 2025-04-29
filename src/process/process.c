@@ -29,8 +29,7 @@ void run_process(int runtime)
     sync_clk();
 
     // Make the process wait when spawned until it is told to run
-    while (!get_process_status(proc_shmid))
-        usleep(1);
+    while (!get_process_status(proc_shmid));
 
     if (DEBUG)
         printf(ANSI_COLOR_YELLOW"[PROCESS] %d Woke Up For The First Time\n"ANSI_COLOR_WHITE, getpid());
