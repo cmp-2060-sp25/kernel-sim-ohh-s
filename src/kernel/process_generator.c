@@ -175,6 +175,9 @@ int main(int argc, char* argv[])
             if (DEBUG)
                 printf(ANSI_COLOR_MAGENTA"[MAIN] All processes have been sent, exiting...\n"ANSI_COLOR_RESET);
             process_generator_cleanup(0);
+            // Make the process generator untill all children exited
+            // Wait for all child processes to exit before terminating
+            while (wait(NULL) > 0);
             exit(0);
         }
         else

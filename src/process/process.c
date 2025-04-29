@@ -81,6 +81,8 @@ void run_process(int runtime)
                 printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished time slice, remaining: %d\n"ANSI_COLOR_WHITE,
                        getpid(), remaining);
         }
+        else if (get_process_info(proc_shmid).pid != getpid())
+            raise(SIGTSTP);
     }
 
     // Finished execution
@@ -131,7 +133,7 @@ void sigIntHandler(int signum)
 void sigStpHandler(int signum)
 {
     // Update status in shared memory to not running
-    update_process_status(proc_shmid, getpid(), 0);
+    // update_process_status(proc_shmid, getpid(), 0);
     if (DEBUG)
         printf(ANSI_COLOR_YELLOW "[PROCESS] Process %d stopped.\n"ANSI_COLOR_WHITE, getpid());
 
