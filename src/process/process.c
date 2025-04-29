@@ -74,7 +74,6 @@ void run_process(int runtime)
                     elapsed++;
                     start_time = now;
                 }
-                usleep(1);
             }
 
             // Update remaining time
@@ -84,12 +83,6 @@ void run_process(int runtime)
                 printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished time slice, remaining: %d\n"ANSI_COLOR_WHITE,
                        getpid(), remaining);
         }
-        // else
-        // {
-        //     // // Update status in shared memory
-        //     // update_process_status(proc_shmid, getpid(), 0);
-        //     raise(SIGTSTP); // Signal process to stop itself
-        // }
     }
 
     // Finished execution
