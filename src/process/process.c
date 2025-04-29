@@ -31,7 +31,9 @@ void run_process(int runtime)
     while (!get_process_status(proc_shmid))
         usleep(1);
 
-    printf("[PROCESS] %d Woke Up For The First Time\n", getpid());
+    if(DEBUG)
+    printf(ANSI_COLOR_YELLOW"[PROCESS] %d Woke Up For The First Time\n"ANSI_COLOR_WHITE, getpid());
+    if(DEBUG)
     printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d started with runtime %d seconds.\n"ANSI_COLOR_WHITE, getpid(),
            runtime);
     int remaining = runtime;
@@ -62,6 +64,7 @@ void run_process(int runtime)
                 int now = get_clk();
                 if (now != start_time)
                 {
+                    if(DEBUG)
                     printf(
                         ANSI_COLOR_YELLOW
                         "[PROCESS] PID %d ran for 1 second. Remaining: %d, Remaining in slice: %d\n"
@@ -76,6 +79,7 @@ void run_process(int runtime)
             // Update remaining time
             remaining -= time_to_run;
             update_process_status(proc_shmid, getpid(), 0);
+            if(DEBUG)
             printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished time slice, remaining: %d\n"ANSI_COLOR_WHITE,
                    getpid(), remaining);
         }
@@ -90,6 +94,7 @@ void run_process(int runtime)
     // Finished execution
     update_process_status(proc_shmid, getpid(), 0);
     kill(process_generator_pid, SIGCHLD);
+    if(DEBUG)
     printf(ANSI_COLOR_YELLOW"[PROCESS] Sending SIGCHLD to: %d\n"ANSI_COLOR_WHITE, process_generator_pid);
     printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished execution.\n"ANSI_COLOR_WHITE, getpid());
     destroy_clk(0);
@@ -135,6 +140,7 @@ void sigStpHandler(int signum)
 {
     // Update status in shared memory to not running
     update_process_status(proc_shmid, getpid(), 0);
+    if(DEBUG)
     printf(ANSI_COLOR_YELLOW "[PROCESS] Process %d stopped.\n"ANSI_COLOR_WHITE, getpid());
 
     pause();
@@ -144,6 +150,7 @@ void sigStpHandler(int signum)
 void sigContHandler(int signum)
 {
     // Uncomment this for more explicit resume logging
+    if(DEBUG)
     printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d received SIGCONT. Resuming...\n"ANSI_COLOR_WHITE, getpid());
 
     // Update status in shared memory to running

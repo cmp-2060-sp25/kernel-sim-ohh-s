@@ -28,6 +28,7 @@ int create_shared_memory(key_t key)
     shm->current_clk = -1; // initialize
 
     shmdt(shm);
+    if(DEBUG)
     printf(ANSI_COLOR_BLUE"[SHARED_MEM] Shared memory created with ID: %d\n"ANSI_COLOR_RESET, shmid);
     return shmid;
 }
@@ -80,6 +81,7 @@ void cleanup_shared_memory(int shmid)
     if (shmid != -1)
     {
         shmctl(shmid, IPC_RMID, NULL);
+        if(DEBUG)
         printf(ANSI_COLOR_BLUE"[SHARED_MEM] Shared memory with ID %d removed\n"ANSI_COLOR_RESET, shmid);
     }
 }

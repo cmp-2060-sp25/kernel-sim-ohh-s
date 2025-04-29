@@ -47,6 +47,7 @@ void run_scheduler()
         int receive_status = receive_processes();
         if (receive_status == -2 && !process_count)
         {
+            if(DEBUG)
             printf(
                 ANSI_COLOR_GREEN"[SCHEDULER] Message queue has been closed. Terminating scheduler.\n"ANSI_COLOR_RESET);
             break; // Exit the scheduling loop
@@ -70,6 +71,7 @@ void run_scheduler()
             pid_t p_pid = running_process->pid;
             process_info_t process_info;
 
+            if(DEBUG)
             printf(ANSI_COLOR_GREEN"[SCHEDULER] RUNNING PID %d for %d units\n"ANSI_COLOR_RESET,
                    running_process->pid, time_slice);
             kill(running_process->pid, SIGCONT);
@@ -103,6 +105,7 @@ void run_scheduler()
             int crt_clk = get_clk();
 
             write_process_info(process_shm_id, p_pid, 1, 1, crt_clk);
+            if(DEBUG)
             printf(ANSI_COLOR_GREEN"[SCHEDULER] RUNNING PID %d for SRTN scheduling\n"ANSI_COLOR_RESET,
                    running_process->pid);
             kill(running_process->pid, SIGCONT);
@@ -138,6 +141,7 @@ void run_scheduler()
                         // else
                         // Instruct process to run for another time unit
                         write_process_info(process_shm_id, running_process->pid, 1, 1, get_clk());
+                        if(DEBUG)
                         printf(
                             ANSI_COLOR_GREEN"[SCHEDULER] PID %d continued for another unit. %d/%d completed\n"
                             ANSI_COLOR_RESET,
@@ -146,6 +150,7 @@ void run_scheduler()
                     else
                     {
                         // Process completed its current time slice
+                        if(DEBUG)
                         printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d completed time slice\n"ANSI_COLOR_RESET,
                                running_process->pid);
                         break;
@@ -189,7 +194,7 @@ void run_scheduler()
                     //     usleep(1000);
                     //     receive_processes();
                     // }
-
+                    if(DEBUG)
                     printf(
                         ANSI_COLOR_GREEN
                         "[SCHEDULER] PID %d preempted and reinserted into queue with %d units remaining\n"
@@ -218,6 +223,7 @@ void run_scheduler()
             // Write current clock as handshake
             write_process_info(process_shm_id, running_process->pid, time_slice, 1, crt_clk);
 
+            if(DEBUG)
             printf(ANSI_COLOR_GREEN"[SCHEDULER] Running PID %d for %d units (RR)\n"ANSI_COLOR_RESET,
                    running_process->pid, time_slice);
 
@@ -237,6 +243,7 @@ void run_scheduler()
                 remaining_time -= time_slice;
                 running_process->last_run_time = get_clk();
 
+                if(DEBUG)
                 printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d finished time slice. Remaining time: %d\n"ANSI_COLOR_RESET,
                        running_process->pid, remaining_time);
 
@@ -262,11 +269,12 @@ void run_scheduler()
                     enqueue(rr_queue, running_process);
                     running_process = NULL;
 
+                    if(DEBUG)
                     printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d re-enqueued with %d units remaining\n"ANSI_COLOR_RESET,
                            p_pid, remaining_time);
                 }
             }
-            else { printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid); }
+            else if(DEBUG) { printf(ANSI_COLOR_GREEN"[SCHEDULER] PID %d has completed execution\n"ANSI_COLOR_RESET, p_pid); }
             end_process_time = get_clk();
             total_busy_time += (end_process_time - start_process_time);
         }
@@ -329,6 +337,7 @@ int receive_processes(void)
 
         if (recv_val == -1 && (errno == EIDRM || errno == EINVAL))
         {
+            if(DEBUG)
             printf("[SCHEDULER] Message queue has been closed or removed during processing\n");
             return -2; // Queue was removed during processing
         }
@@ -339,6 +348,7 @@ int receive_processes(void)
 
 void scheduler_cleanup(int signum)
 {
+    if(DEBUG)
     printf(ANSI_COLOR_GREEN"[SCHEDULER] scheduler_cleanup CALLED\n"ANSI_COLOR_RESET);
 
     if (log_file)
@@ -403,6 +413,7 @@ void scheduler_cleanup(int signum)
         finished_process_info = NULL;
     }
 
+    if(DEBUG)
     printf(ANSI_COLOR_GREEN"[SCHEDULER] scheduler_cleanup FINISHED \n"ANSI_COLOR_RESET);
 
     // if (signum != 0)
@@ -415,8 +426,9 @@ void child_cleanup()
 {
     if (running_process == NULL) return;;
 
-    sync_clk();
+    // sync_clk();
     signal(SIGCHLD, child_cleanup);
+    if(DEBUG)
     printf(ANSI_COLOR_GREEN"[SCHEDULER] CHILD_CLEANUP CALLED\n"ANSI_COLOR_RESET);
 
     if (running_process)
@@ -440,9 +452,9 @@ void child_cleanup()
                     // Only access if malloc succeeded
                     finished_process_info[finished_processes_count]->ta = current_time - running_process
                         ->arrival_time;
-                        finished_process_info[finished_processes_count]->wta = 
-                        (running_process->runtime > 0) ? 
-                        ((float)(finished_process_info[finished_processes_count]->ta) / running_process->runtime) : 
+                        finished_process_info[finished_processes_count]->wta =
+                        (running_process->runtime > 0) ?
+                        ((float)(finished_process_info[finished_processes_count]->ta) / running_process->runtime) :
                         0.0;
                     finished_process_info[finished_processes_count]->waiting_time = running_process->waiting_time;
                 }
@@ -463,6 +475,7 @@ void child_cleanup()
     {
         printf("[SCHEDULER] Requested to cleanup none????\n");
     }
+    if(DEBUG)
     printf(ANSI_COLOR_GREEN"[SCHEDULER] CHILD_CLEANUP FINISHED\n"ANSI_COLOR_RESET);
 }
 
@@ -530,6 +543,7 @@ int init_scheduler()
     for (int i = 0; i < MAX_INPUT_PROCESSES; i++)
         finished_process_info[i] = NULL;
 
+    if(DEBUG)
     printf(ANSI_COLOR_GREEN"[SCHEDULER] Scheduler initialized successfully at time %d\n"ANSI_COLOR_RESET,
            current_time);
     return 0;
