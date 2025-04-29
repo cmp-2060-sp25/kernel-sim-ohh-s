@@ -20,7 +20,8 @@ void run_process(int runtime)
     proc_shmid = shmget(SHM_KEY, sizeof(process_info_t), 0666);
     if (proc_shmid == -1)
     {
-        perror("[PROCESS] Error getting shared memory");
+        if (DEBUG)
+            perror("[PROCESS] Error getting shared memory");
         proc_shmid = -1;
     }
 
@@ -31,11 +32,11 @@ void run_process(int runtime)
     while (!get_process_status(proc_shmid))
         usleep(1);
 
-    if(DEBUG)
-    printf(ANSI_COLOR_YELLOW"[PROCESS] %d Woke Up For The First Time\n"ANSI_COLOR_WHITE, getpid());
-    if(DEBUG)
-    printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d started with runtime %d seconds.\n"ANSI_COLOR_WHITE, getpid(),
-           runtime);
+    if (DEBUG)
+        printf(ANSI_COLOR_YELLOW"[PROCESS] %d Woke Up For The First Time\n"ANSI_COLOR_WHITE, getpid());
+    if (DEBUG)
+        printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d started with runtime %d seconds.\n"ANSI_COLOR_WHITE, getpid(),
+               runtime);
     int remaining = runtime;
     while (remaining > 0)
     {
@@ -64,12 +65,12 @@ void run_process(int runtime)
                 int now = get_clk();
                 if (now != start_time)
                 {
-                    if(DEBUG)
-                    printf(
-                        ANSI_COLOR_YELLOW
-                        "[PROCESS] PID %d ran for 1 second. Remaining: %d, Remaining in slice: %d\n"
-                        ANSI_COLOR_WHITE,
-                        getpid(), remaining - elapsed - 1, time_to_run - elapsed - 1);
+                    if (DEBUG)
+                        printf(
+                            ANSI_COLOR_YELLOW
+                            "[PROCESS] PID %d ran for 1 second. Remaining: %d, Remaining in slice: %d\n"
+                            ANSI_COLOR_WHITE,
+                            getpid(), remaining - elapsed - 1, time_to_run - elapsed - 1);
                     elapsed++;
                     start_time = now;
                 }
@@ -79,9 +80,9 @@ void run_process(int runtime)
             // Update remaining time
             remaining -= time_to_run;
             update_process_status(proc_shmid, getpid(), 0);
-            if(DEBUG)
-            printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished time slice, remaining: %d\n"ANSI_COLOR_WHITE,
-                   getpid(), remaining);
+            if (DEBUG)
+                printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished time slice, remaining: %d\n"ANSI_COLOR_WHITE,
+                       getpid(), remaining);
         }
         // else
         // {
@@ -94,8 +95,8 @@ void run_process(int runtime)
     // Finished execution
     update_process_status(proc_shmid, getpid(), 0);
     kill(process_generator_pid, SIGCHLD);
-    if(DEBUG)
-    printf(ANSI_COLOR_YELLOW"[PROCESS] Sending SIGCHLD to: %d\n"ANSI_COLOR_WHITE, process_generator_pid);
+    if (DEBUG)
+        printf(ANSI_COLOR_YELLOW"[PROCESS] Sending SIGCHLD to: %d\n"ANSI_COLOR_WHITE, process_generator_pid);
     printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d finished execution.\n"ANSI_COLOR_WHITE, getpid());
     destroy_clk(0);
 }
@@ -140,8 +141,8 @@ void sigStpHandler(int signum)
 {
     // Update status in shared memory to not running
     update_process_status(proc_shmid, getpid(), 0);
-    if(DEBUG)
-    printf(ANSI_COLOR_YELLOW "[PROCESS] Process %d stopped.\n"ANSI_COLOR_WHITE, getpid());
+    if (DEBUG)
+        printf(ANSI_COLOR_YELLOW "[PROCESS] Process %d stopped.\n"ANSI_COLOR_WHITE, getpid());
 
     pause();
     signal(SIGTSTP, sigStpHandler);
@@ -150,8 +151,8 @@ void sigStpHandler(int signum)
 void sigContHandler(int signum)
 {
     // Uncomment this for more explicit resume logging
-    if(DEBUG)
-    printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d received SIGCONT. Resuming...\n"ANSI_COLOR_WHITE, getpid());
+    if (DEBUG)
+        printf(ANSI_COLOR_YELLOW"[PROCESS] Process %d received SIGCONT. Resuming...\n"ANSI_COLOR_WHITE, getpid());
 
     // Update status in shared memory to running
     update_process_status(proc_shmid, getpid(), 1);
@@ -167,7 +168,8 @@ process_info_t get_process_info(int proc_shmid)
     process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
     if ((void*)shm == (void*)-1)
     {
-        perror("Error attaching shared memory in process");
+        if (DEBUG)
+            perror("Error attaching shared memory in process");
         return process_info;
     }
 
@@ -191,7 +193,9 @@ int get_time_to_run(int proc_shmid, pid_t pid)
     process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
     if ((void*)shm == (void*)-1)
     {
-        perror("Error attaching shared memory in process");
+        if (DEBUG)
+
+            perror("Error attaching shared memory in process");
         return -1;
     }
     int remaining_time = -1;
@@ -217,7 +221,9 @@ int get_process_status(int proc_shmid)
     process_info_t* shm = (process_info_t*)shmat(proc_shmid, NULL, 0);
     if ((void*)shm == (void*)-1)
     {
-        perror("Error attaching shared memory in process");
+        if (DEBUG)
+
+            perror("Error attaching shared memory in process");
         return 0;
     }
 
