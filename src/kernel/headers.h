@@ -9,6 +9,7 @@ typedef struct
     int arrival_time;
     int runtime;
     int priority;
+    int memsize;  // Added memory size for Phase 2
 } processParameters;
 
 typedef struct
