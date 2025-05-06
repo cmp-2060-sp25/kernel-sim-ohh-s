@@ -334,8 +334,15 @@ bool mm_map_pid_to_id(int pid, int process_id) {
     }
     
     // Clear any existing mapping for this PID
-    if (mm->pid_to_id_map[pid] != -1) {
-        mm->id_to_pid_map[mm->pid_to_id_map[pid]] = -1;
+    int old_process_id = mm->pid_to_id_map[pid];
+    if (old_process_id != -1) {
+        mm->id_to_pid_map[old_process_id] = -1;
+    }
+    
+    // Clear any existing mapping for this process ID
+    int old_pid = mm->id_to_pid_map[process_id];
+    if (old_pid != -1) {
+        mm->pid_to_id_map[old_pid] = -1;
     }
     
     // Store the bidirectional mapping
@@ -409,9 +416,18 @@ int mm_get_pid_by_id(int process_id) {
 
 // Modified version of mm_free to work with PIDs by first converting to process IDs
 void mm_free(int pid) {
-    if (mm == NULL || pid < 0 || pid > mm->max_pid) {
+    if (mm == NULL || pid < 0) {
         if (DEBUG) {
             printf(ANSI_COLOR_RED "[MEMORY MANAGER] Invalid free request: PID %d\n" ANSI_COLOR_RESET, pid);
+        }
+        return;
+    }
+    
+    // First check if pid is within bounds
+    if (pid > mm->max_pid) {
+        if (DEBUG) {
+            printf(ANSI_COLOR_YELLOW "[MEMORY MANAGER] PID %d exceeds max PID range, assuming no allocation\n" 
+                ANSI_COLOR_RESET, pid);
         }
         return;
     }
@@ -419,7 +435,7 @@ void mm_free(int pid) {
     int process_id = mm_get_id_by_pid(pid);
     if (process_id == -1) {
         if (DEBUG) {
-            printf(ANSI_COLOR_YELLOW "[MEMORY MANAGER] PID %d has no memory allocation or mapping\n" 
+            printf(ANSI_COLOR_YELLOW "[MEMORY MANAGER] PID %d has no mapping to a process ID\n" 
                 ANSI_COLOR_RESET, pid);
         }
         return;
@@ -433,16 +449,24 @@ void mm_free(int pid) {
     mm->id_to_pid_map[process_id] = -1;
     
     if (DEBUG) {
-        printf(ANSI_COLOR_GREEN "[MEMORY MANAGER] Freed memory for PID %d (process ID %d)\n" 
+        printf(ANSI_COLOR_GREEN "[MEMORY MANAGER] Cleared mapping between PID %d and process ID %d\n" 
             ANSI_COLOR_RESET, pid, process_id);
     }
 }
 
 // Implementation for mm_check_pid_allocation - properly handles PIDs
 bool mm_check_pid_allocation(int pid, int* offset, size_t* size) {
-    if (mm == NULL || pid < 0 || pid > mm->max_pid) {
+    if (mm == NULL || pid < 0) {
         if (DEBUG) {
             printf(ANSI_COLOR_RED "[MEMORY MANAGER] Invalid PID %d\n" ANSI_COLOR_RESET, pid);
+        }
+        return false;
+    }
+    
+    // Check if PID is within bounds
+    if (pid > mm->max_pid) {
+        if (DEBUG) {
+            printf(ANSI_COLOR_YELLOW "[MEMORY MANAGER] PID %d exceeds max PID range\n" ANSI_COLOR_RESET, pid);
         }
         return false;
     }
@@ -450,13 +474,13 @@ bool mm_check_pid_allocation(int pid, int* offset, size_t* size) {
     int process_id = mm_get_id_by_pid(pid);
     if (process_id == -1) {
         if (DEBUG) {
-            printf(ANSI_COLOR_RED "[MEMORY MANAGER] PID %d is not mapped to any process ID\n" ANSI_COLOR_RESET, pid);
+            printf(ANSI_COLOR_YELLOW "[MEMORY MANAGER] PID %d is not mapped to any process ID\n" ANSI_COLOR_RESET, pid);
         }
         return false;
     }
     
     // Check if the process ID has memory allocated
-    if (mm->id_to_offset_map[process_id] != -1) {
+    if (process_id <= mm->max_id && mm->id_to_offset_map[process_id] != -1) {
         if (offset) *offset = mm->id_to_offset_map[process_id];
         if (size) *size = mm->id_to_size_map[process_id];
         return true;
@@ -471,8 +495,17 @@ bool mm_check_pid_allocation(int pid, int* offset, size_t* size) {
 
 // Keep mm_free_by_id separate for process IDs - rename for clarity
 void mm_free_by_id(int process_id) {
-    if (mm == NULL || process_id < 0 || process_id > mm->max_id) {
+    if (mm == NULL || process_id < 0) {
         if (DEBUG) printf(ANSI_COLOR_RED "[MEMORY MANAGER] Attempted to free invalid process ID %d\n" ANSI_COLOR_RESET, process_id);
+        return;
+    }
+    
+    // Check if process_id is within bounds
+    if (process_id > mm->max_id) {
+        if (DEBUG) {
+            printf(ANSI_COLOR_YELLOW "[MEMORY MANAGER] Process ID %d exceeds max ID range, assuming no allocation\n" 
+                ANSI_COLOR_RESET, process_id);
+        }
         return;
     }
     
@@ -481,7 +514,7 @@ void mm_free_by_id(int process_id) {
     int offset = mm->id_to_offset_map[process_id];
     if (offset == -1) {
         if (DEBUG) {
-            printf(ANSI_COLOR_RED "[MEMORY MANAGER] WARNING: Process ID %d does not have memory allocated\n" ANSI_COLOR_RESET, process_id);
+            printf(ANSI_COLOR_YELLOW "[MEMORY MANAGER] Process ID %d does not have memory allocated\n" ANSI_COLOR_RESET, process_id);
         }
         return;
     }
@@ -510,13 +543,7 @@ int mm_allocate(int process_id, size_t size) {
         }
         return -1;
     }
-    // Check for double allocation
-    if (mm->id_to_offset_map[process_id] != -1) {
-        if (DEBUG) {
-            printf(ANSI_COLOR_RED "[MEMORY MANAGER] WARNING: Process ID %d already has memory allocated at offset %d, freeing it first!\n" ANSI_COLOR_RESET, process_id, mm->id_to_offset_map[process_id]);
-        }
-        mm_free(process_id); // Free previous allocation before re-allocating
-    }
+    
     // Expand ID map if needed
     if (process_id > mm->max_id) {
         int new_max_id = process_id + 100;
@@ -524,12 +551,29 @@ int mm_allocate(int process_id, size_t size) {
         if (!new_offset_map) return -1;
         for (int i = mm->max_id + 1; i <= new_max_id; i++) new_offset_map[i] = -1;
         mm->id_to_offset_map = new_offset_map;
+        
         size_t* new_size_map = realloc(mm->id_to_size_map, sizeof(size_t) * (new_max_id + 1));
         if (!new_size_map) return -1;
         for (int i = mm->max_id + 1; i <= new_max_id; i++) new_size_map[i] = 0;
         mm->id_to_size_map = new_size_map;
+        
+        int* new_id_to_pid_map = realloc(mm->id_to_pid_map, sizeof(int) * (new_max_id + 1));
+        if (!new_id_to_pid_map) return -1;
+        for (int i = mm->max_id + 1; i <= new_max_id; i++) new_id_to_pid_map[i] = -1;
+        mm->id_to_pid_map = new_id_to_pid_map;
+        
         mm->max_id = new_max_id;
     }
+    
+    // Check for double allocation
+    if (mm->id_to_offset_map[process_id] != -1) {
+        if (DEBUG) {
+            printf(ANSI_COLOR_YELLOW "[MEMORY MANAGER] Process ID %d already has memory allocated at offset %d, freeing it first\n" 
+                ANSI_COLOR_RESET, process_id, mm->id_to_offset_map[process_id]);
+        }
+        mm_free_by_id(process_id); // Free previous allocation before re-allocating
+    }
+    
     int offset = buddy_alloc(mm->memory, size);
     if (offset != -1) {
         mm->id_to_offset_map[process_id] = offset;

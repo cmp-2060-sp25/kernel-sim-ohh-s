@@ -54,7 +54,10 @@ void process_waiting_list() {
             perror("execl failed");
             exit(1);
         } else if (pid > 0) {
-            proc->pid = pid;            
+            proc->pid = pid;
+            // Establish bidirectional mapping between PID and process ID
+            mm_map_pid_to_id(pid, proc->id);
+            
             if (allocation != -1) {
                 if (DEBUG)
                     printf(ANSI_COLOR_MAGENTA"[PROC_GENERATOR] Started waiting process ID %d with PID %d\n" ANSI_COLOR_RESET, proc->id, pid);
@@ -73,7 +76,7 @@ void process_waiting_list() {
         } else {
             perror("fork failed");
             // Free the allocation since forking failed
-            mm_free(proc->id);
+            mm_free_by_id(proc->id);
         }
         free(proc);
     }
@@ -222,6 +225,9 @@ int main(int argc, char* argv[])
                         else if (pid > 0)
                         {
                             process_parameters[i]->pid = pid;
+                            // Add mapping between PID and process ID
+                            mm_map_pid_to_id(pid, process_parameters[i]->id);
+                            
                             if (allocation != -1)
                             {
                                 if (DEBUG)
@@ -247,7 +253,7 @@ int main(int argc, char* argv[])
                         {
                             perror("fork failed");
                             // Free the allocation since forking failed
-                            mm_free(process_parameters[i]->id);
+                            mm_free_by_id(process_parameters[i]->id);
                         }
                     }
                     else if (process_parameters[i] != NULL && process_parameters[i]->arrival_time > crt_clk)
@@ -414,30 +420,32 @@ void child_process_handler(int signum)
     signal(SIGCHLD, child_process_handler);
     int status;
     pid_t pid;
-    pid = waitpid(-1, &status, 0);
+    pid = waitpid(-1, &status, WNOHANG);
+    
+    if (pid <= 0) return; // No child or error, just return
+    
     if (DEBUG)
-        printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Acknowledged that child process PID: %d has died %d\n"ANSI_COLOR_RESET,
+        printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Child process PID: %d has terminated with status %d\n"ANSI_COLOR_RESET,
                pid, WEXITSTATUS(status));
                 
-        // Check if this PID has memory allocated before freeing
-        // This ensures we don't try to free memory that wasn't allocated
-        // or was already freed
-        int offset = -1;
-        size_t size = 0;
+    // Check if this PID has memory allocated before freeing
+    // This ensures we don't try to free memory that wasn't allocated
+    // or was already freed
+    int offset = -1;
+    size_t size = 0;
+    
+    if (mm_check_pid_allocation(pid, &offset, &size)) {
+        // Free memory when process terminates
+        mm_free(pid);
         
-        if (mm_check_pid_allocation(pid, &offset, &size)) {
-            // Free memory when process terminates
-            mm_free(pid);
-            
-            if (DEBUG)
-                printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Released memory for terminated process PID: %d (offset: %d, size: %zu)\n"ANSI_COLOR_RESET,
-                    pid, offset, size);
-            
-        } else {
-            if (DEBUG)
-                printf(ANSI_COLOR_YELLOW"[PROC_GENERATOR] Process PID: %d had no memory allocated or was already freed\n"ANSI_COLOR_RESET,
-                    pid);
-        }
+        if (DEBUG)
+            printf(ANSI_COLOR_BLUE"[PROC_GENERATOR] Released memory for terminated process PID: %d (offset: %d, size: %zu)\n"ANSI_COLOR_RESET,
+                pid, offset, size);
+    } else {
+        if (DEBUG)
+            printf(ANSI_COLOR_YELLOW"[PROC_GENERATOR] Process PID: %d had no memory allocated or was already freed\n"ANSI_COLOR_RESET,
+                pid);
+    }
 }
 
 void process_generator_cleanup(int scheduler_pid)
