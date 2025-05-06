@@ -331,7 +331,7 @@ int receive_processes(void)
         else if (scheduler_type == RR)
             enqueue(rr_queue, new_pcb);
 
-        process_count++;
+        process_count++;  // Changed from process_count to process_count
         recv_val = msgrcv(msgid, &received_pcb, sizeof(PCB), 1, IPC_NOWAIT);
 
         if (recv_val == -1 && (errno == EIDRM || errno == EINVAL))
@@ -459,7 +459,7 @@ void child_cleanup()
                 }
             }
 
-            process_count--;
+            process_count--;  // Changed from process_count to process_count
             finished_processes_count++;
         }
         else
@@ -481,7 +481,7 @@ void child_cleanup()
 int init_scheduler()
 {
     int current_time = get_clk();
-    process_count = 0;
+    process_count = 0;  // Changed from process_count to process_count
     running_process = NULL;
 
     // Initialize shared memory
